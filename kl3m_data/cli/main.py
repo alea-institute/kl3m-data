@@ -19,6 +19,7 @@ from rich.progress import (
 from kl3m_data.sources.base_source import BaseSource, SourceDownloadStatus
 from kl3m_data.sources.us.fdlp import FDLPSource
 from kl3m_data.sources.us.govinfo import GovInfoSource
+from kl3m_data.sources.us.usc import USCSource
 
 
 def get_source(source_id: str, **kwargs) -> BaseSource:
@@ -35,6 +36,8 @@ def get_source(source_id: str, **kwargs) -> BaseSource:
         return FDLPSource(**kwargs)
     if source_id in ("govinfo", "us/govinfo"):
         return GovInfoSource(**kwargs)
+    if source_id in ("usc", "us/usc"):
+        return USCSource(**kwargs)
     raise ValueError(f"Invalid source ID: {source_id}")
 
 
