@@ -334,6 +334,28 @@ class BaseSource(abc.ABC):
             request_headers.update(headers)
         return json.loads(self._get(url=url, params=params, headers=request_headers))
 
+    def _get_json_list(
+        self,
+        url: str,
+        params: Optional[dict[str, Any]] = None,
+        headers: Optional[dict[str, Any]] = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Perform a GET request to the specified URL and return the JSON response as a list.
+
+        Args:
+            url (str): URL to GET.
+            params (Optional[dict[str, Any]]): Parameters to include in the request.
+            headers (Optional[dict[str, Any]]): Headers to include in the request.
+
+        Returns:
+            list[dict[str, Any]]: JSON response content as a list.
+        """
+        json_data = self._get_json(url=url, params=params, headers=headers)
+        if isinstance(json_data, list):
+            return json_data
+        return [json_data]
+
     def _post_json(
         self,
         url: str,
