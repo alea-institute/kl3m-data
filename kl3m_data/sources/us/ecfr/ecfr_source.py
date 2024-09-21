@@ -5,7 +5,7 @@ eCFR source module.
 # imports
 import datetime
 import hashlib
-from typing import Any, Generator, List
+from typing import Any, Generator, List, Optional
 
 # packages
 
@@ -162,7 +162,7 @@ class ECFRSource(BaseSource):
             url=self.get_url(f"/versioner/v1/structure/{date}/title-{title}.json"),
         )
 
-        def parse_structure_node(node: dict) -> ECFRStructureNode:
+        def parse_structure_node(node: dict) -> Optional[ECFRStructureNode]:
             """
             Local method to parse a structure node.
 
@@ -172,17 +172,27 @@ class ECFRSource(BaseSource):
             Returns:
                 ECFRStructureNode: The parsed structure node.
             """
-            return ECFRStructureNode(
-                **{
-                    k: v
-                    if k != "children"
-                    else [parse_structure_node(child) for child in v]
-                    for k, v in node.items()
-                }
-            )
+            try:
+                structure = ECFRStructureNode(
+                    **{
+                        k: v
+                        if k != "children"
+                        else [parse_structure_node(child) for child in v]
+                        for k, v in node.items()
+                    }
+                )
+            except Exception as e:  # pylint: disable=broad-except
+                LOGGER.error("Error parsing structure node: %s", str(e))
+                return None
+
+            # remove any empty children
+            structure.children = [child for child in structure.children if child]
+            return structure
 
         # get and cache
         parsed_data = parse_structure_node(structure_data)
+        if not parsed_data:
+            raise ValueError("Error parsing title structure")
         self.title_structure_cache[title] = parsed_data
         return parsed_data
 
@@ -384,7 +394,7 @@ class ECFRSource(BaseSource):
                     try:
                         # check if it already exists
                         if self.check_id(
-                            f"{latest_title_date}/{title.number}/{node.identifier}/"
+                            f"{latest_title_date}/{title.number}/{node.identifier}.json"
                         ):
                             LOGGER.info(
                                 "Document already exists: %s",
