@@ -17,6 +17,7 @@ from rich.progress import (
 
 # project imports
 from kl3m_data.sources.base_source import BaseSource, SourceDownloadStatus
+from kl3m_data.sources.us.ecfr.ecfr_source import ECFRSource
 from kl3m_data.sources.us.fdlp import FDLPSource
 from kl3m_data.sources.us.govinfo import GovInfoSource
 from kl3m_data.sources.us.usc import USCSource
@@ -38,6 +39,8 @@ def get_source(source_id: str, **kwargs) -> BaseSource:
         return GovInfoSource(**kwargs)
     if source_id in ("usc", "us/usc"):
         return USCSource(**kwargs)
+    if source_id in ("ecfr", "us/ecfr"):
+        return ECFRSource(**kwargs)
     raise ValueError(f"Invalid source ID: {source_id}")
 
 

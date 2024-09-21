@@ -9,7 +9,11 @@ This ALEA project contains the complete source code to collect and preprocess al
 KL3M embedding and generative models.
 
 ## Sources
- * [ ] us/fdlp: US Federal Depository Library Program (FDLP) data
+ * [x] us/fdlp: US Federal Depository Library Program (FDLP) data
+ * [x] us/govinfo: US Government Publishing Office (GPO) data via GovInfo API
+ * [x] us/usc: US Code content from the Office of the Law Revision Counsel (OLRC)
+ * [x] us/ecfr: Electronic Code of Federal Regulations (eCFR) data
+ * [ ] us/fr: Federal Register data
 
 ## Installation
 TODO
