@@ -26,7 +26,7 @@ from kl3m_data.sources.us.ecfr.ecfr_types import (
 )
 
 # constants
-BASE_URL = "https://www.ecfr.gov/api"
+ECFR_BASE_URL = "https://www.ecfr.gov/api"
 
 
 class ECFRSource(BaseSource):
@@ -54,7 +54,7 @@ class ECFRSource(BaseSource):
         super().__init__(metadata)
 
         # set the kwargs
-        self.base_url = kwargs.get("base_url", BASE_URL)
+        self.base_url = kwargs.get("base_url", ECFR_BASE_URL)
 
         # caches
         self.title_versions_cache: dict[int, List[ECFRContentVersion]] = {}
@@ -328,6 +328,7 @@ class ECFRSource(BaseSource):
                     "Code of Federal Regulations",
                     "Electronic Code of Federal Regulations",
                 ],
+                bibliographic_citation=f"CFR {title} CFR {section_node.label.rstrip('.')}.  {date_string}",
             )
 
             # send to s3

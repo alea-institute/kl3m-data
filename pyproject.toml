@@ -71,7 +71,8 @@ disable = [
     "line-too-long",
     "too-few-public-methods",
     "no-self-argument",
-    "cyclic-import"
+    "cyclic-import",
+    "duplicate-code",
 ]
 extension-pkg-allow-list = ["lxml"]
 ignore-patterns = ["test_.*?.py", "conftest.py"]
