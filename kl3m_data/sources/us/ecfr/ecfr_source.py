@@ -5,9 +5,12 @@ eCFR source module.
 # imports
 import datetime
 import hashlib
+import time
 from typing import Any, Generator, List, Optional
 
+
 # packages
+import httpx
 
 # project
 from kl3m_data.logger import LOGGER
@@ -24,9 +27,11 @@ from kl3m_data.sources.us.ecfr.ecfr_types import (
     ECFRContentVersion,
     ECFRStructureNode,
 )
+from kl3m_data.utils.httpx_utils import get_httpx_timeout, get_httpx_limits, get_default_headers
 
 # constants
 ECFR_BASE_URL = "https://www.ecfr.gov/api"
+ECFR_DELAY = 0.1
 
 
 class ECFRSource(BaseSource):
@@ -52,6 +57,19 @@ class ECFRSource(BaseSource):
 
         # call the super
         super().__init__(metadata)
+
+        # redefine the client with longer timeouts;
+        # we need this to allow the API to respond for large docs like titles 12/26/42
+        # TODO: decide if we want to push this to namespaced config like before
+        self.client = httpx.Client(
+            http1=True,
+            http2=True,
+            verify=False,
+            follow_redirects=True,
+            limits=get_httpx_limits(),
+            timeout=get_httpx_timeout(read_timeout=60*5),
+            headers=get_default_headers(),
+        )
 
         # set the kwargs
         self.base_url = kwargs.get("base_url", ECFR_BASE_URL)
@@ -403,6 +421,7 @@ class ECFRSource(BaseSource):
                             )
                         else:
                             self.download_id(f"{title.number}/{node.identifier}")
+                            time.sleep(ECFR_DELAY)
                         current_progress.success += 1
                     except Exception as e:  # pylint: disable=broad-except
                         LOGGER.error("Error downloading document: %s", str(e))
@@ -421,5 +440,4 @@ class ECFRSource(BaseSource):
 
 if __name__ == "__main__":
     # print(ECFRSource().get_title_html(1, "2022-12-29", section="603.18"))
-    for s in ECFRSource().download_all():
-        print(s)
+    print(ECFRSource().get_latest_title_date(12))
