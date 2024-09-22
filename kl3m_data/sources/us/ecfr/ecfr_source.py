@@ -27,7 +27,11 @@ from kl3m_data.sources.us.ecfr.ecfr_types import (
     ECFRContentVersion,
     ECFRStructureNode,
 )
-from kl3m_data.utils.httpx_utils import get_httpx_timeout, get_httpx_limits, get_default_headers
+from kl3m_data.utils.httpx_utils import (
+    get_httpx_timeout,
+    get_httpx_limits,
+    get_default_headers,
+)
 
 # constants
 ECFR_BASE_URL = "https://www.ecfr.gov/api"
@@ -67,7 +71,7 @@ class ECFRSource(BaseSource):
             verify=False,
             follow_redirects=True,
             limits=get_httpx_limits(),
-            timeout=get_httpx_timeout(read_timeout=60*5),
+            timeout=get_httpx_timeout(read_timeout=60 * 5),
             headers=get_default_headers(),
         )
 

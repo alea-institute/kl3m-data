@@ -8,6 +8,8 @@ import hashlib
 from pathlib import Path
 from typing import Any, Generator
 
+import httpx
+
 # packages
 import lxml.etree
 
@@ -22,6 +24,11 @@ from kl3m_data.sources.base_source import (
     SourceProgressStatus,
 )
 from kl3m_data.sources.us.fr.fr_types import FRAgency, FRDocument
+from kl3m_data.utils.httpx_utils import (
+    get_httpx_limits,
+    get_httpx_timeout,
+    get_default_headers,
+)
 
 # get XLS transform path relative to here
 STYLESHEET_PATH = Path(__file__).parent / "fedregister.xsl"
@@ -110,6 +117,19 @@ class FRSource(BaseSource):
 
         # call the super
         super().__init__(metadata)
+
+        # redefine the client with longer timeouts;
+        # we need this to allow the API to respond for large docs like titles 12/26/42
+        # TODO: decide if we want to push this to namespaced config like before
+        self.client = httpx.Client(
+            http1=True,
+            http2=True,
+            verify=False,
+            follow_redirects=True,
+            limits=get_httpx_limits(),
+            timeout=get_httpx_timeout(read_timeout=60 * 5),
+            headers=get_default_headers(),
+        )
 
         # set the kwargs
         self.base_url = kwargs.get("base_url", FR_BASE_URL)
