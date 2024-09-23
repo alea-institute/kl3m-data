@@ -7,13 +7,12 @@ import datetime
 import hashlib
 from typing import Any, Generator
 
+# packages
 import pypdfium2
 
+# project
 from kl3m_data.logger import LOGGER
 from kl3m_data.sources.base_document import Document
-# packages
-
-# project
 from kl3m_data.sources.base_source import (
     BaseSource,
     SourceMetadata,

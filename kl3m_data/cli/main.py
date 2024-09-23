@@ -23,6 +23,7 @@ from kl3m_data.sources.us.fdlp import FDLPSource
 from kl3m_data.sources.us.fr.fr_source import FRSource
 from kl3m_data.sources.us.govinfo import GovInfoSource
 from kl3m_data.sources.us.recap.recap_source import RECAPSource
+from kl3m_data.sources.us.recap_docs.recap_docs_source import RECAPDocSource
 from kl3m_data.sources.us.usc import USCSource
 
 
@@ -51,6 +52,8 @@ def get_source(source_id: str, **kwargs) -> BaseSource:
         return EDGARSource(**kwargs)
     if source_id in ("recap", "us/recap"):
         return RECAPSource(**kwargs)
+    if source_id in ("recap_docs", "us/recap_docs"):
+        return RECAPDocSource(**kwargs)
     raise ValueError(f"Invalid source ID: {source_id}")
 
 

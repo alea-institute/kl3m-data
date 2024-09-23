@@ -23,6 +23,8 @@ TODO: Table
  * [x] us/fr: Federal Register data via NARA/GPO API
  * [x] us/edgar: SEC EDGAR data via SEC feed
  * [x] us/recap: RECAP raw documents via S3
+ * [x] us/recap-docs: RECAP attached docs (Word, WordPerfect, PDF, MP3) via S3
+ * [ ] us/pacer-dockets: PACER docket sheets via archive.org
 
 ### UK
 
