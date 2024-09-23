@@ -8,9 +8,8 @@ import hashlib
 from pathlib import Path
 from typing import Any, Generator
 
-import httpx
-
 # packages
+import httpx
 import lxml.etree
 
 from kl3m_data.logger import LOGGER
@@ -104,6 +103,10 @@ class FRSource(BaseSource):
         Initialize the source.
 
         Args:
+            min_date (datetime.date): The minimum date.
+            max_date (datetime.date): The maximum date.
+            page_size (int): The page size.
+            base_url (str): The base URL.
             update (bool): Whether to update the source.
             delay (int): Delay between requests
         """
@@ -498,12 +501,3 @@ class FRSource(BaseSource):
         while current_date <= self.max_date:
             yield from self.download_date(current_date)
             current_date += datetime.timedelta(days=1)
-
-
-if __name__ == "__main__":
-    c = FRSource()
-    """
-    for a in c.get_documents_by_date(datetime.date(2021, 6, 1)):
-        print(a)
-    """
-    c.download_id("2021-11441")

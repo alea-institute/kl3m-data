@@ -46,6 +46,7 @@ playwright = "^1.47.0"
 lxml = "^5.3.0"
 # license: Apache-2.0
 boto3 = "^1.35.22"
+pypdfium2 = "^4.30.0"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -83,6 +84,7 @@ max-attributes = 15
 max-branches = 15
 max-locals = 25
 min-public-methods = 0
+disable = ['W0511']
 
 [tool.isort]
 profile = "black"

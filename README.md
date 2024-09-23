@@ -10,6 +10,10 @@ KL3M embedding and generative models.
 
 ## Primary Sources
 
+### Summary
+TODO: Table
+
+
 ### US
 
  * [x] us/fdlp: US Federal Depository Library Program (FDLP) via GPO
@@ -17,6 +21,8 @@ KL3M embedding and generative models.
  * [x] us/usc: US Code releases via Office of the Law Revision Counsel (OLRC)
  * [x] us/ecfr: Electronic Code of Federal Regulations (eCFR) via NARA/GPO API
  * [x] us/fr: Federal Register data via NARA/GPO API
+ * [x] us/edgar: SEC EDGAR data via SEC feed
+ * [x] us/recap: RECAP raw documents via S3
 
 ### UK
 

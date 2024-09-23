@@ -18,12 +18,15 @@ from rich.progress import (
 # project imports
 from kl3m_data.sources.base_source import BaseSource, SourceDownloadStatus
 from kl3m_data.sources.us.ecfr.ecfr_source import ECFRSource
+from kl3m_data.sources.us.edgar.edgar_source import EDGARSource
 from kl3m_data.sources.us.fdlp import FDLPSource
 from kl3m_data.sources.us.fr.fr_source import FRSource
 from kl3m_data.sources.us.govinfo import GovInfoSource
+from kl3m_data.sources.us.recap.recap_source import RECAPSource
 from kl3m_data.sources.us.usc import USCSource
 
 
+# pylint: disable=too-many-return-statements
 def get_source(source_id: str, **kwargs) -> BaseSource:
     """
     Get a source based on the given source ID.
@@ -44,6 +47,10 @@ def get_source(source_id: str, **kwargs) -> BaseSource:
         return ECFRSource(**kwargs)
     if source_id in ("fr", "us/fr"):
         return FRSource(**kwargs)
+    if source_id in ("edgar", "us/edgar"):
+        return EDGARSource(**kwargs)
+    if source_id in ("recap", "us/recap"):
+        return RECAPSource(**kwargs)
     raise ValueError(f"Invalid source ID: {source_id}")
 
 
