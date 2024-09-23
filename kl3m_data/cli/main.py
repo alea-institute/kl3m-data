@@ -220,6 +220,15 @@ def main() -> None:
             raise ValueError("Missing date.")
         date = datetime.date.fromisoformat(kwargs.pop("date"))
         source_download_date(source, date, **kwargs)
+    elif args.command == "download_date_range":
+        # ensure we have start and end dates in kwargs
+        if "start_date" not in kwargs:
+            raise ValueError("Missing start date.")
+        if "end_date" not in kwargs:
+            raise ValueError("Missing end date.")
+        start_date = datetime.date.fromisoformat(kwargs.pop("start_date"))
+        end_date = datetime.date.fromisoformat(kwargs.pop("end_date"))
+        source_download_date_range(source, start_date, end_date, **kwargs)
     elif args.command == "download_all":
         source_download_all(source, **kwargs)
     else:
