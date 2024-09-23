@@ -28,7 +28,7 @@ from kl3m_data.utils.uu_utils import uudecode
 
 # constants
 EDGAR_BASE_URL = "https://www.sec.gov/Archives/edgar/"
-EDGAR_MIN_DATE = datetime.date(1995, 1, 1)
+EDGAR_MIN_DATE = datetime.date(1996, 1, 1)
 EDGAR_MAX_DATE = datetime.date.today()
 
 # EDGAR requires a specific user agent format
