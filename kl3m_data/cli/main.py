@@ -25,6 +25,7 @@ from kl3m_data.sources.us.govinfo import GovInfoSource
 from kl3m_data.sources.us.recap.recap_source import RECAPSource
 from kl3m_data.sources.us.recap_docs.recap_docs_source import RECAPDocSource
 from kl3m_data.sources.us.usc import USCSource
+from kl3m_data.sources.us.uspto_patents.uspto_patents_source import USPTOPatentSource
 
 
 # pylint: disable=too-many-return-statements
@@ -54,6 +55,8 @@ def get_source(source_id: str, **kwargs) -> BaseSource:
         return RECAPSource(**kwargs)
     if source_id in ("recap_docs", "us/recap_docs"):
         return RECAPDocSource(**kwargs)
+    if source_id in ("uspto_patents", "us/uspto_patents"):
+        return USPTOPatentSource(**kwargs)
     raise ValueError(f"Invalid source ID: {source_id}")
 
 

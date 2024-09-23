@@ -25,6 +25,7 @@ TODO: Table
  * [x] us/recap: RECAP raw documents via S3
  * [x] us/recap-docs: RECAP attached docs (Word, WordPerfect, PDF, MP3) via S3
  * [ ] us/pacer-dockets: PACER docket sheets via archive.org
+ * [x] us/patent-grants: USPTO patent grants via USPTO bulk data
 
 ### UK
 
