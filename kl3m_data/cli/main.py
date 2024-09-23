@@ -103,6 +103,48 @@ def source_download_date(source: BaseSource, date: datetime.date, **kwargs) -> N
                 progress.console.log(status.message)
 
 
+def source_download_date_range(
+    source: BaseSource, start_date: datetime.date, end_date: datetime.date, **kwargs
+) -> None:
+    """
+    Download data from the given source with a progress bar.
+
+    Args:
+        source: The data source to download from.
+        start_date: The start date to download.
+        end_date: The end date to download.
+        **kwargs: Additional keyword arguments for the download
+
+    Returns:
+        None
+    """
+    progress_columns = [
+        TextColumn("[bold blue]{task.description}"),
+        TextColumn("[progress.percentage]{task.completed}/{task.total}"),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        TextColumn("[bold blue]{task.fields[extra]}"),
+    ]
+    with Progress(*progress_columns) as progress:
+        download_task = progress.add_task(
+            f"[bold blue]Downloading {source.metadata.dataset_id}...",
+            total=None,
+            extra="{}",
+        )
+        for status in source.download_date_range(start_date, end_date, **kwargs):
+            progress.update(
+                download_task,
+                completed=status.current,
+                total=status.total,
+                advance=1,
+                description=status.message,
+                extra=status.extra,
+            )
+            if status.message:
+                progress.console.log(status.message)
+
+
 def source_download_all(source: BaseSource, **kwargs) -> None:
     """
     Download all data from the given source with a progress bar.
