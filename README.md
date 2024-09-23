@@ -3,10 +3,18 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+
 ## Description
 
-This ALEA project contains the complete source code to collect and preprocess all training data related to the
-KL3M embedding and generative models.
+This [ALEA](https://aleainstitute.ai/) project contains the complete source code to collect and preprocess 
+all training data related to the [KL3M embedding and generative models](https://kl3m.ai/).
+
+
+## Paper
+Pending arXiv submission
+
+## Citation
+Pending arXiv submission
 
 ## Primary Sources
 
@@ -26,10 +34,16 @@ TODO: Table
  * [x] us/recap-docs: RECAP attached docs (Word, WordPerfect, PDF, MP3) via S3
  * [ ] us/pacer-dockets: PACER docket sheets via archive.org
  * [x] us/patent-grants: USPTO patent grants via USPTO bulk data
+ * [ ] us/dotgov: filtered .gov TLD domains via direct retrieval
 
 ### UK
 
+ * [ ] uk/legislation: All enacted UK legislation via legislation.gov.uk bulk download
+
 ### EU ("Federal")
+
+ * [ ] eu/eurlex_oj: EU Official Journal via Cellar/EU API
+
 
 ### Germany
 
