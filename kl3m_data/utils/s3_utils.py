@@ -5,7 +5,7 @@ S3 utilities
 # imports
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Generator
 
 # packages
 import boto3
@@ -235,3 +235,31 @@ def check_prefix_exists(
     except Exception as e:  # pylint: disable=broad-except
         LOGGER.error("Error checking prefix: %s", e)
         return False
+
+
+def iter_prefix(
+    client: boto3.client,
+    bucket: str,
+    prefix: str,
+) -> Generator[str, None, None]:
+    """
+    Iterate over objects with a prefix in an S3 bucket.
+
+    Args:
+        client (boto3.client): S3 client.
+        bucket (str): Bucket name.
+        prefix (str): Prefix.
+
+    Yields:
+        str: Object key.
+    """
+    # get the objects with the prefix
+    try:
+        list_paginator = client.get_paginator("list_objects_v2")
+        list_results = list_paginator.paginate(Bucket=bucket, Prefix=prefix)
+        for results in list_results:
+            if "Contents" in results:
+                for obj in results["Contents"]:
+                    yield obj["Key"]
+    except Exception as e:  # pylint: disable=broad-except
+        LOGGER.error("Error listing prefix: %s", e)

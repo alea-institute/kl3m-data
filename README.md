@@ -8,12 +8,48 @@
 This ALEA project contains the complete source code to collect and preprocess all training data related to the
 KL3M embedding and generative models.
 
-## Sources
- * [x] us/fdlp: US Federal Depository Library Program (FDLP) data
+## Primary Sources
+
+### Summary
+TODO: Table
+
+
+### US
+
+ * [x] us/fdlp: US Federal Depository Library Program (FDLP) via GPO
  * [x] us/govinfo: US Government Publishing Office (GPO) data via GovInfo API
- * [x] us/usc: US Code content from the Office of the Law Revision Counsel (OLRC)
- * [x] us/ecfr: Electronic Code of Federal Regulations (eCFR) data
- * [ ] us/fr: Federal Register data
+ * [x] us/usc: US Code releases via Office of the Law Revision Counsel (OLRC)
+ * [x] us/ecfr: Electronic Code of Federal Regulations (eCFR) via NARA/GPO API
+ * [x] us/fr: Federal Register data via NARA/GPO API
+ * [x] us/edgar: SEC EDGAR data via SEC feed
+ * [x] us/recap: RECAP raw documents via S3
+ * [x] us/recap-docs: RECAP attached docs (Word, WordPerfect, PDF, MP3) via S3
+ * [ ] us/pacer-dockets: PACER docket sheets via archive.org
+ * [x] us/patent-grants: USPTO patent grants via USPTO bulk data
+
+### UK
+
+### EU ("Federal")
+
+### Germany
+
+### Australia
+
+### Canada
+
+### India
+
+## Tasks
+
+### Extraction
+
+
+### Summarization
+
+
+### Transform and Convert
+
+
 
 ## Installation
 TODO

@@ -18,11 +18,17 @@ from rich.progress import (
 # project imports
 from kl3m_data.sources.base_source import BaseSource, SourceDownloadStatus
 from kl3m_data.sources.us.ecfr.ecfr_source import ECFRSource
+from kl3m_data.sources.us.edgar.edgar_source import EDGARSource
 from kl3m_data.sources.us.fdlp import FDLPSource
+from kl3m_data.sources.us.fr.fr_source import FRSource
 from kl3m_data.sources.us.govinfo import GovInfoSource
+from kl3m_data.sources.us.recap.recap_source import RECAPSource
+from kl3m_data.sources.us.recap_docs.recap_docs_source import RECAPDocSource
 from kl3m_data.sources.us.usc import USCSource
+from kl3m_data.sources.us.uspto_patents.uspto_patents_source import USPTOPatentSource
 
 
+# pylint: disable=too-many-return-statements
 def get_source(source_id: str, **kwargs) -> BaseSource:
     """
     Get a source based on the given source ID.
@@ -41,6 +47,16 @@ def get_source(source_id: str, **kwargs) -> BaseSource:
         return USCSource(**kwargs)
     if source_id in ("ecfr", "us/ecfr"):
         return ECFRSource(**kwargs)
+    if source_id in ("fr", "us/fr"):
+        return FRSource(**kwargs)
+    if source_id in ("edgar", "us/edgar"):
+        return EDGARSource(**kwargs)
+    if source_id in ("recap", "us/recap"):
+        return RECAPSource(**kwargs)
+    if source_id in ("recap_docs", "us/recap_docs"):
+        return RECAPDocSource(**kwargs)
+    if source_id in ("uspto_patents", "us/uspto_patents"):
+        return USPTOPatentSource(**kwargs)
     raise ValueError(f"Invalid source ID: {source_id}")
 
 
@@ -88,6 +104,48 @@ def source_download_date(source: BaseSource, date: datetime.date, **kwargs) -> N
             extra="{}",
         )
         for status in source.download_date(date, **kwargs):
+            progress.update(
+                download_task,
+                completed=status.current,
+                total=status.total,
+                advance=1,
+                description=status.message,
+                extra=status.extra,
+            )
+            if status.message:
+                progress.console.log(status.message)
+
+
+def source_download_date_range(
+    source: BaseSource, start_date: datetime.date, end_date: datetime.date, **kwargs
+) -> None:
+    """
+    Download data from the given source with a progress bar.
+
+    Args:
+        source: The data source to download from.
+        start_date: The start date to download.
+        end_date: The end date to download.
+        **kwargs: Additional keyword arguments for the download
+
+    Returns:
+        None
+    """
+    progress_columns = [
+        TextColumn("[bold blue]{task.description}"),
+        TextColumn("[progress.percentage]{task.completed}/{task.total}"),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        TextColumn("[bold blue]{task.fields[extra]}"),
+    ]
+    with Progress(*progress_columns) as progress:
+        download_task = progress.add_task(
+            f"[bold blue]Downloading {source.metadata.dataset_id}...",
+            total=None,
+            extra="{}",
+        )
+        for status in source.download_date_range(start_date, end_date, **kwargs):
             progress.update(
                 download_task,
                 completed=status.current,
@@ -175,6 +233,15 @@ def main() -> None:
             raise ValueError("Missing date.")
         date = datetime.date.fromisoformat(kwargs.pop("date"))
         source_download_date(source, date, **kwargs)
+    elif args.command == "download_date_range":
+        # ensure we have start and end dates in kwargs
+        if "start_date" not in kwargs:
+            raise ValueError("Missing start date.")
+        if "end_date" not in kwargs:
+            raise ValueError("Missing end date.")
+        start_date = datetime.date.fromisoformat(kwargs.pop("start_date"))
+        end_date = datetime.date.fromisoformat(kwargs.pop("end_date"))
+        source_download_date_range(source, start_date, end_date, **kwargs)
     elif args.command == "download_all":
         source_download_all(source, **kwargs)
     else:
