@@ -145,7 +145,7 @@ class RECAPDocSource(BaseSource):
 
                     document = Document(
                         dataset_id=self.metadata.dataset_id,
-                        id=doc_filename,
+                        id=doc_filename.lstrip("/"),
                         identifier="s3://" + RECAP_BUCKET + "/" + doc_key,
                         content=doc_content,
                         size=len(doc_content),
