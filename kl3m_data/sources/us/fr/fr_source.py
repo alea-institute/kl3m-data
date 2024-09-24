@@ -499,5 +499,10 @@ class FRSource(BaseSource):
         # iterate over the dates
         current_date = self.min_date
         while current_date <= self.max_date:
-            yield from self.download_date(current_date)
-            current_date += datetime.timedelta(days=1)
+            try:
+                yield from self.download_date(current_date)
+                current_date += datetime.timedelta(days=1)
+            except Exception as e:  # pylint: disable=broad-except
+                LOGGER.error("Error downloading date %s: %s", current_date, str(e))
+                current_date += datetime.timedelta(days=1)
+                continue
