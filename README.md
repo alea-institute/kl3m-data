@@ -6,7 +6,7 @@
 
 ## Description
 
-This [ALEA](https://aleainstitute.ai/) project contains the complete source code to collect and preprocess 
+This [ALEA](https://aleainstitute.ai/) project contains the complete source code to collect and preprocess
 all training data related to the [KL3M embedding and generative models](https://kl3m.ai/).
 
 
@@ -26,6 +26,7 @@ TODO: Table
 
  * [x] us/fdlp: US Federal Depository Library Program (FDLP) via GPO
  * [x] us/govinfo: US Government Publishing Office (GPO) data via GovInfo API
+ * [ ] us/regulations-documents: Related documents and comments/responses to regulations.gov dockets via regulations.gov API
  * [x] us/usc: US Code releases via Office of the Law Revision Counsel (OLRC)
  * [x] us/ecfr: Electronic Code of Federal Regulations (eCFR) via NARA/GPO API
  * [x] us/fr: Federal Register data via NARA/GPO API
