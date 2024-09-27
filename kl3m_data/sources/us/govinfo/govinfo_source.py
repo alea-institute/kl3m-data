@@ -693,7 +693,7 @@ class GovInfoSource(BaseSource):
             # get keys to check for s3 prefix
             collection_id = result.collectionCode
             package_id = result.packageId
-            if self.check_id(f"{collection_id}/{package_id}"):
+            if self.check_id(f"{collection_id}/{package_id}/"):
                 LOGGER.info("Document already exists: %s", result.packageId)
                 return SourceDownloadStatus.EXISTED
 
