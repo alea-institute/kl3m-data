@@ -568,6 +568,31 @@ class GovInfoSource(BaseSource):
 
         return dcd
 
+    @staticmethod
+    def filter_download_types(download: dict[str, str]) -> dict[str, str]:
+        """
+        Filter the download types so that we only keep the ZIP download in cases
+        where there is not at least one txt or pdf alternative.
+
+        Args:
+            download (dict[str, str]): The download types.
+
+        Returns:
+            dict[str, str]: The filtered download types.
+        """
+        # return copy
+        return_download = download.copy()
+
+        # check for the presence of a txt, html, xml, or pdf
+        has_txt = "txtLink" in return_download
+        has_pdf = "pdfLink" in return_download
+
+        # if we have either, then pop the zipLink if it's there
+        if has_txt or has_pdf:
+            return_download.pop("zipLink", None)
+
+        return return_download
+
     def download_link(
         self,
         download_link: str,
@@ -658,9 +683,8 @@ class GovInfoSource(BaseSource):
         # track status
         any_failed = False
         any_success = False
-        for download_type, download_link in target_summary.extra.get(
-            "download", {}
-        ).items():
+        download_targets = self.filter_download_types(target_summary.extra.get("download", {}))
+        for download_type, download_link in download_targets.items():
             try:
                 status = self.download_link(
                     download_link=download_link,
@@ -716,7 +740,8 @@ class GovInfoSource(BaseSource):
         # track status
         any_failed = False
         any_success = False
-        for download_type, download_link in target_summary.download.items():
+        download_targets = self.filter_download_types(target_summary.download)
+        for download_type, download_link in download_targets.items():
             try:
                 status = self.download_link(
                     download_link=download_link,
