@@ -376,6 +376,7 @@ class ECFRSource(BaseSource):
     ) -> Generator[SourceProgressStatus, None, None]:
         raise NotImplementedError
 
+    # pylint: disable=too-many-nested-blocks
     def download_all(
         self, **kwargs: dict[str, Any]
     ) -> Generator[SourceProgressStatus, None, None]:

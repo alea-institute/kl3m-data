@@ -51,6 +51,7 @@ DEFAULT_EXCLUDED_COLLECTIONS = (
     "FR",
 )
 
+
 class GovInfoSource(BaseSource):
     """
     Represents a source for the GovInfo API.
