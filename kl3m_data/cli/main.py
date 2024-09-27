@@ -18,6 +18,7 @@ from rich.progress import (
 # project imports
 from kl3m_data.sources.base_source import BaseSource, SourceDownloadStatus
 from kl3m_data.sources.eu.eu_oj.eu_oj import EUOJSource
+from kl3m_data.sources.us.dockets.dockets_source import DocketSource
 from kl3m_data.sources.us.ecfr.ecfr_source import ECFRSource
 from kl3m_data.sources.us.edgar.edgar_source import EDGARSource
 from kl3m_data.sources.us.fdlp import FDLPSource
@@ -60,6 +61,8 @@ def get_source(source_id: str, **kwargs) -> BaseSource:
         return USPTOPatentSource(**kwargs)
     if source_id in ("eu_oj", "eu/eu_oj"):
         return EUOJSource(**kwargs)
+    if source_id in ("dockets", "us/dockets"):
+        return DocketSource(**kwargs)
     raise ValueError(f"Invalid source ID: {source_id}")
 
 
