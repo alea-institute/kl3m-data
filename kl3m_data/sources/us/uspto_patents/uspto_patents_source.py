@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Generator, Iterable
 
 # packages
+import httpx
 import lxml.etree
 
 # project
@@ -27,6 +28,7 @@ from kl3m_data.sources.base_source import (
     SourceDownloadStatus,
     SourceProgressStatus,
 )
+from kl3m_data.utils.httpx_utils import get_default_headers, get_httpx_limits, get_httpx_timeout
 
 # constants
 PTO_BASE_URL = "https://bulkdata.uspto.gov/data/patent/grant/redbook/fulltext/"
@@ -59,6 +61,19 @@ class USPTOPatentSource(BaseSource):
 
         # call the super
         super().__init__(metadata)
+
+        # redefine the client with longer timeouts;
+        # we need this to allow the API to respond for large docs like titles 12/26/42
+        # TODO: decide if we want to push this to namespaced config like before
+        self.client = httpx.Client(
+            http1=True,
+            http2=True,
+            verify=False,
+            follow_redirects=True,
+            limits=get_httpx_limits(),
+            timeout=get_httpx_timeout(read_timeout=60 * 5),
+            headers=get_default_headers(),
+        )
 
         # check for delay and update
         self.delay = kwargs.get("delay", 0)
@@ -710,5 +725,8 @@ class USPTOPatentSource(BaseSource):
         """
         # get the list of URLs
         for digest_url in self.get_grant_urls():
-            digest_archive = self._get(digest_url)
-            yield from self.parse_zip_file(digest_archive, digest_url)
+            try:
+                digest_archive = self._get(digest_url)
+                yield from self.parse_zip_file(digest_archive, digest_url)
+            except Exception as e:  # pylint: disable=broad-except
+                LOGGER.error("Error downloading feed: %s", str(e))
