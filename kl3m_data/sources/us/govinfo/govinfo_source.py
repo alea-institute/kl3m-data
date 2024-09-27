@@ -683,7 +683,9 @@ class GovInfoSource(BaseSource):
         # track status
         any_failed = False
         any_success = False
-        download_targets = self.filter_download_types(target_summary.extra.get("download", {}))
+        download_targets = self.filter_download_types(
+            target_summary.extra.get("download", {})
+        )
         for download_type, download_link in download_targets.items():
             try:
                 status = self.download_link(

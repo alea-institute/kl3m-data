@@ -28,7 +28,11 @@ from kl3m_data.sources.base_source import (
     SourceDownloadStatus,
     SourceProgressStatus,
 )
-from kl3m_data.utils.httpx_utils import get_default_headers, get_httpx_limits, get_httpx_timeout
+from kl3m_data.utils.httpx_utils import (
+    get_default_headers,
+    get_httpx_limits,
+    get_httpx_timeout,
+)
 
 # constants
 PTO_BASE_URL = "https://bulkdata.uspto.gov/data/patent/grant/redbook/fulltext/"
