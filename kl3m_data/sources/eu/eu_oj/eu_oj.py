@@ -320,7 +320,6 @@ class EUOJSource(BaseSource):
                         "year": year,
                         "id": entry.get("OJ", None),
                     }
-
                 except Exception as e:  # pylint: disable=broad-except
                     LOGGER.error("Error downloading document: %s", str(e))
                     current_progress.message = str(e)
