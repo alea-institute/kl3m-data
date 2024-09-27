@@ -302,6 +302,15 @@ class GovInfoSource(BaseSource):
             headers={"X-Api-Key": self.api_key},
         )
 
+        # ensure we don't store collection code with multi-tag values
+        collection_code: Optional[str] = package_json.get("collectionCode", None)
+        if not collection_code:
+            raise ValueError(f"Collection code not found for package {package_id}")
+
+        # now only keep the first element if there is a ;
+        if ";" in collection_code:
+            collection_code = collection_code[: collection_code.find(";")]
+
         # set default and extra fields
         pi = PackageInfo(
             packageId=package_id,
@@ -311,7 +320,7 @@ class GovInfoSource(BaseSource):
             lastModified=package_json.get("lastModified", None),  # type: ignore
             dateIssued=package_json.get("dateIssued", None),  # type: ignore
             collectionName=package_json.get("collectionName", None),  # type: ignore
-            collectionCode=package_json.get("collectionCode", None),  # type: ignore
+            collectionCode=collection_code,
             category=package_json.get("category", None),  # type: ignore
             session=package_json.get("session", None),  # type: ignore
             branch=package_json.get("branch", None),  # type: ignore
