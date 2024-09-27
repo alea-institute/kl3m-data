@@ -45,6 +45,11 @@ DEFAULT_SORTS = [
 DEFAULT_MIN_DATE = datetime.date(1995, 1, 1)
 DEFAULT_MAX_DATE = datetime.date.today()
 
+# set up defaults to avoid duplicates
+DEFAULT_EXCLUDED_COLLECTIONS = (
+    "CFR",
+    "FR",
+)
 
 class GovInfoSource(BaseSource):
     """
@@ -104,6 +109,11 @@ class GovInfoSource(BaseSource):
                 self.max_date = DEFAULT_MAX_DATE
         else:
             self.max_date = DEFAULT_MAX_DATE
+
+        # add default exceptions
+        self.excluded_collections = DEFAULT_EXCLUDED_COLLECTIONS
+        if "excluded_collections" in kwargs:
+            self.excluded_collections = kwargs["excluded_collections"]
 
         # set the update and delay
         self.update = kwargs.get("update", False)
@@ -193,7 +203,7 @@ class GovInfoSource(BaseSource):
     def search(
         self,
         query: str,
-        page_size: int = 10,
+        page_size: int = 100,
         offset_mark: str = "*",
         result_level: str = "default",
         historical: bool = True,
@@ -240,6 +250,10 @@ class GovInfoSource(BaseSource):
         # set the results
         results = []
         for result in response.get("results", []):
+            # skip any excluded collection items
+            if result.get("collectionCode") in self.excluded_collections:
+                continue
+
             # set the result
             results.append(
                 SearchResult(
