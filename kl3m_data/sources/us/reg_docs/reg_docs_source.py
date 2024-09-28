@@ -26,7 +26,7 @@ from kl3m_data.utils.s3_utils import get_s3_client
 
 # constants
 BASE_API_URL = "https://api.regulations.gov/v4"
-REG_MIN_DATE = datetime.date(2010, 2, 1)
+REG_MIN_DATE = datetime.date(2010, 1, 1)
 REG_MAX_DATE = datetime.date.today()
 
 
@@ -102,22 +102,22 @@ class RegulationsDocSource(BaseSource):
         # update the rate limit remaining
         try:
             new_rate_limit_remaining = int(headers["x-ratelimit-remaining"])
+
+            if self.rate_limit_remaining:
+                if new_rate_limit_remaining > self.rate_limit_remaining:
+                    # decrease delay by 2.5%
+                    self.delay = max(3.0, self.delay * 0.975)
+                elif new_rate_limit_remaining < self.rate_limit_remaining:
+                    # increase delay by 5%
+                    self.delay = min(7.0, self.delay * 1.05)
+                else:
+                    # decrease by 0.5%
+                    self.delay = max(4.0, self.delay * 0.995)
+
+            self.rate_limit_remaining = new_rate_limit_remaining
         except KeyError:
             LOGGER.warning("Rate limit remaining not found in response")
-            return
 
-        if self.rate_limit_remaining:
-            if new_rate_limit_remaining > self.rate_limit_remaining:
-                # decrease delay by 2.5%
-                self.delay = max(3.0, self.delay * 0.975)
-            elif new_rate_limit_remaining < self.rate_limit_remaining:
-                # increase delay by 5%
-                self.delay = min(7.0, self.delay * 1.05)
-            else:
-                # decrease by 0.5%
-                self.delay = max(4.0, self.delay * 0.995)
-
-        self.rate_limit_remaining = new_rate_limit_remaining
         LOGGER.info(
             "Rate limit: %s/%s; Delay: %ss",
             self.rate_limit_remaining,
@@ -243,8 +243,12 @@ class RegulationsDocSource(BaseSource):
         Returns:
             SourceDownloadStatus: The download status.
         """
+        LOGGER.info("Downloading %d file formats", len(file_format_records))
+
         try:
             for file_format_record in file_format_records:
+                LOGGER.info("Downloading %s", file_format_record)
+
                 # download and parse this
                 file_url = file_format_record.get("fileUrl")
                 if isinstance(file_url, list):
