@@ -24,29 +24,33 @@ TODO: Table
 
 ### US
 
- * [x] us/fdlp: US Federal Depository Library Program (FDLP) via GPO
- * [x] us/govinfo: US Government Publishing Office (GPO) data via GovInfo API
- * [ ] us/regulations-documents: Related documents and comments/responses to regulations.gov dockets via regulations.gov API
- * [x] us/usc: US Code releases via Office of the Law Revision Counsel (OLRC)
- * [x] us/ecfr: Electronic Code of Federal Regulations (eCFR) via NARA/GPO API
- * [x] us/fr: Federal Register data via NARA/GPO API
- * [x] us/edgar: SEC EDGAR data via SEC feed
- * [x] us/recap: RECAP raw documents via S3
- * [x] us/recap-docs: RECAP attached docs (Word, WordPerfect, PDF, MP3) via S3
- * [ ] us/pacer-dockets: PACER docket sheets via archive.org
- * [x] us/patent-grants: USPTO patent grants via USPTO bulk data
- * [ ] us/dotgov: filtered .gov TLD domains via direct retrieval
+* [x] us/dockets: PACER/RECAP docket sheets via archive.org
+* [ ] us/dotgov: filtered .gov TLD domains via direct retrieval
+* [x] us/ecfr: Electronic Code of Federal Regulations (eCFR) via NARA/GPO API
+* [x] us/edgar: SEC EDGAR data via SEC feed
+* [x] us/fdlp: US Federal Depository Library Program (FDLP) via GPO
+* [x] us/fr: Federal Register data via NARA/GPO API
+* [x] us/govinfo: US Government Publishing Office (GPO) data via GovInfo API
+* [x] us/recap: RECAP raw documents via S3
+* [x] us/recap_docs: RECAP attached docs (Word, WordPerfect, PDF, MP3) via S3
+* [x] us/reg_docs: Documents associated with regulations.gov dockets via regulations.gov API
+* [x] us/usc: US Code releases via Office of the Law Revision Counsel (OLRC)
+* [x] us/uspto_patents: USPTO patent grants via USPTO bulk data
+
+
+### EU ("Federal")
+
+ * [x] eu/eurlex_oj: EU Official Journal via Cellar/Europa
 
 ### UK
 
  * [ ] uk/legislation: All enacted UK legislation via legislation.gov.uk bulk download
 
-### EU ("Federal")
-
- * [ ] eu/eurlex_oj: EU Official Journal via Cellar/EU API
-
 
 ### Germany
+
+ * [ ] de/bundesgesetzblatt: Bundesgesetzblatt (BGBl) 2023- from recht.bund.de
+
 
 ### Australia
 
