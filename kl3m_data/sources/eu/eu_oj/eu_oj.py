@@ -9,12 +9,11 @@ import hashlib
 import urllib.parse
 from typing import Any, Generator
 
-
-from kl3m_data.logger import LOGGER
-from kl3m_data.sources.base_document import Document
 # packages
 
 # project
+from kl3m_data.logger import LOGGER
+from kl3m_data.sources.base_document import Document
 from kl3m_data.sources.base_source import (
     BaseSource,
     SourceMetadata,

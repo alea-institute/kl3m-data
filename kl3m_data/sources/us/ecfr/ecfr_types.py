@@ -2,14 +2,13 @@
 eCFR data types
 """
 
-# imports
+# future imports
 from __future__ import annotations
 
 # imports
 import datetime
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
-
 
 # packages
 

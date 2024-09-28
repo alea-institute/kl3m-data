@@ -32,7 +32,7 @@ DOCKETS_BUCKET = "com-courtlistener-storage"
 DOCKETS_KEY = "bulk-data/dockets-2024-08-31.csv.bz2"
 
 
-class DocketSource(BaseSource):
+class DocketsSource(BaseSource):
     """
     Docket source class
     """
@@ -229,6 +229,6 @@ class DocketSource(BaseSource):
 
 
 if __name__ == "__main__":
-    source = DocketSource()
+    source = DocketsSource()
     for p in source.download_all():
         print(p)

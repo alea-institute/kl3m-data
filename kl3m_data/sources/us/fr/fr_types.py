@@ -2,7 +2,7 @@
 FR data types
 """
 
-# imports
+# future
 from __future__ import annotations
 
 # imports
