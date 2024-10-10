@@ -25,7 +25,7 @@ TODO: Table
 ### US
 
 * [x] us/dockets: PACER/RECAP docket sheets via archive.org
-* [ ] us/dotgov: filtered .gov TLD domains via direct retrieval
+* [x] us/dotgov: filtered .gov TLD domains via direct retrieval
 * [x] us/ecfr: Electronic Code of Federal Regulations (eCFR) via NARA/GPO API
 * [x] us/edgar: SEC EDGAR data via SEC feed
 * [x] us/fdlp: US Federal Depository Library Program (FDLP) via GPO
