@@ -283,15 +283,15 @@ class DotGovDocSource(BaseSource):
                 try:
                     record = json.loads(line)
 
+                    valid, record_type = is_valid_file(record)
+                    if not valid:
+                        LOGGER.info("Skipping invalid file %s", record["member_file"])
+                        continue
+
                     # check if it already exists
                     if self.check_id(record["member_file"]):
                         LOGGER.info("Document %s already exists", record["member_file"])
                         current_progress.success += 1
-                        continue
-
-                    valid, record_type = is_valid_file(record)
-                    if not valid:
-                        LOGGER.info("Skipping invalid file %s", record["member_file"])
                         continue
 
                     # get full path combining the website and the file path
