@@ -19,6 +19,7 @@ from rich.progress import (
 from kl3m_data.sources.base_source import BaseSource, SourceDownloadStatus
 from kl3m_data.sources.eu.eu_oj.eu_oj import EUOJSource
 from kl3m_data.sources.us.dockets.dockets_source import DocketsSource
+from kl3m_data.sources.us.dotgov.dotgov_source import DotGovDocSource
 from kl3m_data.sources.us.ecfr.ecfr_source import ECFRSource
 from kl3m_data.sources.us.edgar.edgar_source import EDGARSource
 from kl3m_data.sources.us.fdlp import FDLPSource
@@ -66,6 +67,8 @@ def get_source(source_id: str, **kwargs) -> BaseSource:
         return DocketsSource(**kwargs)
     if source_id in ("reg_docs", "us/reg_docs"):
         return RegulationsDocSource(**kwargs)
+    if source_id in ("dotgov", "us/dotgov"):
+        return DotGovDocSource(**kwargs)
     raise ValueError(f"Invalid source ID: {source_id}")
 
 

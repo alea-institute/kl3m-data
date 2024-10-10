@@ -202,6 +202,7 @@ class GovInfoSource(BaseSource):
         # raise an error if we've exhausted retries
         raise RuntimeError(f"Exhausted retries for {url}")
 
+    # pylint: disable=too-many-positional-arguments
     def search(
         self,
         query: str,
@@ -335,6 +336,7 @@ class GovInfoSource(BaseSource):
 
         return pi
 
+    # pylint: disable=too-many-positional-arguments
     def get_package_granules(
         self,
         package_id: str,
@@ -463,6 +465,7 @@ class GovInfoSource(BaseSource):
         ]
         return CollectionSummary(**summary_args)
 
+    # pylint: disable=too-many-positional-arguments
     def get_collection_updates(
         self,
         collection_code: str,
@@ -618,6 +621,7 @@ class GovInfoSource(BaseSource):
 
         return return_download
 
+    # pylint: disable=too-many-positional-arguments
     def download_link(
         self,
         download_link: str,

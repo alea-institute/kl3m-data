@@ -12,6 +12,17 @@ files = [
 ]
 
 [[package]]
+name = "alea-preprocess"
+version = "0.1.10"
+description = "Efficient, accessible preprocessing routines for pretrain, SFT, and DPO training data preparation from the ALEA Institute."
+optional = false
+python-versions = "<4.0,>=3.10"
+files = [
+    {file = "alea_preprocess-0.1.10-cp312-cp312-manylinux_2_34_x86_64.whl", hash = "sha256:98ac6e559cdd8221e6547102908fe1f6f156da01a26ee7325ae8fca6c05926d8"},
+    {file = "alea_preprocess-0.1.10.tar.gz", hash = "sha256:15f2ae82ddef51c0325000fadcc51bfe3f0f3e26b751617f120d1e48280a213e"},
+]
+
+[[package]]
 name = "anyio"
 version = "4.6.0"
 description = "High level compatibility layer for multiple asynchronous event loop implementations"
@@ -49,17 +60,17 @@ typing-extensions = {version = ">=4.0.0", markers = "python_version < \"3.11\""}
 
 [[package]]
 name = "boto3"
-version = "1.35.34"
+version = "1.35.35"
 description = "The AWS SDK for Python"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "boto3-1.35.34-py3-none-any.whl", hash = "sha256:291e7b97a34967ed93297e6171f1bebb8529e64633dd48426760e3fdef1cdea8"},
-    {file = "boto3-1.35.34.tar.gz", hash = "sha256:57e6ee8504e7929bc094bb2afc879943906064179a1e88c23b4812e2c6f61532"},
+    {file = "boto3-1.35.35-py3-none-any.whl", hash = "sha256:72eb73d90448632d7388644388be6977293ccb8fbfefd5fd39d7e75ff2d48f8a"},
+    {file = "boto3-1.35.35.tar.gz", hash = "sha256:73d4f22b57a725f0e8a6e0c4b2d16336c128e39f3189c24f9e513daa7c14936b"},
 ]
 
 [package.dependencies]
-botocore = ">=1.35.34,<1.36.0"
+botocore = ">=1.35.35,<1.36.0"
 jmespath = ">=0.7.1,<2.0.0"
 s3transfer = ">=0.10.0,<0.11.0"
 
@@ -68,13 +79,13 @@ crt = ["botocore[crt] (>=1.21.0,<2.0a0)"]
 
 [[package]]
 name = "botocore"
-version = "1.35.34"
+version = "1.35.35"
 description = "Low-level, data-driven core of boto 3."
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "botocore-1.35.34-py3-none-any.whl", hash = "sha256:ccb0fe397b11b81c9abc0c87029d17298e17bf658d8db5c0c5a551a12a207e7a"},
-    {file = "botocore-1.35.34.tar.gz", hash = "sha256:789b6501a3bb4a9591c1fe10da200cc315c1fa5df5ada19c720d8ef06439b3e3"},
+    {file = "botocore-1.35.35-py3-none-any.whl", hash = "sha256:44b843e310b6338c3086908928709c7a303a2bb0326ea3c93ece5ac5afafb6c8"},
+    {file = "botocore-1.35.35.tar.gz", hash = "sha256:899d303046391caa1d05093a673e52d02185b37bc64bd78771ad6752167a25ab"},
 ]
 
 [package.dependencies]
@@ -1037,6 +1048,26 @@ files = [
 ]
 
 [[package]]
+name = "tqdm"
+version = "4.66.5"
+description = "Fast, Extensible Progress Meter"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "tqdm-4.66.5-py3-none-any.whl", hash = "sha256:90279a3770753eafc9194a0364852159802111925aa30eb3f9d85b0e805ac7cd"},
+    {file = "tqdm-4.66.5.tar.gz", hash = "sha256:e1020aef2e5096702d8a025ac7d16b1577279c9d63f8375b63083e9a5f0fcbad"},
+]
+
+[package.dependencies]
+colorama = {version = "*", markers = "platform_system == \"Windows\""}
+
+[package.extras]
+dev = ["pytest (>=6)", "pytest-cov", "pytest-timeout", "pytest-xdist"]
+notebook = ["ipywidgets (>=6)"]
+slack = ["slack-sdk"]
+telegram = ["requests"]
+
+[[package]]
 name = "typing-extensions"
 version = "4.12.2"
 description = "Backported and Experimental Type Hints for Python 3.8+"
@@ -1067,4 +1098,4 @@ zstd = ["zstandard (>=0.18.0)"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<4.0.0"
-content-hash = "96949d696e5d471d7642ac6951ebc6171f543a8948b98a88c247a3ae3f0ad9a3"
+content-hash = "f5dab376ce972d82109b7521d18929036a50357d362ec76ccbbd28f1af6a4897"
