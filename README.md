@@ -44,7 +44,7 @@ TODO: Table
 
 ### UK
 
- * [ ] uk/legislation: All enacted UK legislation via legislation.gov.uk bulk download
+ * [x] uk/legislation: All enacted UK legislation via legislation.gov.uk bulk download
 
 
 ### Germany
