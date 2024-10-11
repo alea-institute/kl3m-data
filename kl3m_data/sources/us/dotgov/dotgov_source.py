@@ -340,7 +340,11 @@ class DotGovDocSource(BaseSource):
                     document.to_s3()
                     current_progress.success += 1
                 except Exception as e:  # pylint: disable=broad-except
-                    LOGGER.error("Error downloading document %s: %s", document["id"], e)
+                    try:
+                        doc_id = record["member_file"]
+                    except KeyError:
+                        doc_id = None
+                    LOGGER.error("Error downloading document %s: %s", doc_id, str(e))
                     current_progress.message = str(e)
                     current_progress.failure += 1
                     current_progress.status = False
