@@ -8,7 +8,7 @@ import hashlib
 from typing import Any, Generator
 
 # packages
-import pypdfium2
+import pypdfium2  # TODO: replace with alea-preprocess once public on pypi
 
 # project
 from kl3m_data.logger import LOGGER

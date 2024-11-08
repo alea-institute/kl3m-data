@@ -17,6 +17,12 @@ from rich.progress import (
 
 # project imports
 from kl3m_data.sources.base_source import BaseSource, SourceDownloadStatus
+from kl3m_data.sources.eu.eu_oj.eu_oj import EUOJSource
+from kl3m_data.sources.uk.uk_legislation.uk_legislation_source import (
+    UKLegislationSource,
+)
+from kl3m_data.sources.us.dockets.dockets_source import DocketsSource
+from kl3m_data.sources.us.dotgov.dotgov_source import DotGovDocSource
 from kl3m_data.sources.us.ecfr.ecfr_source import ECFRSource
 from kl3m_data.sources.us.edgar.edgar_source import EDGARSource
 from kl3m_data.sources.us.fdlp import FDLPSource
@@ -24,6 +30,7 @@ from kl3m_data.sources.us.fr.fr_source import FRSource
 from kl3m_data.sources.us.govinfo import GovInfoSource
 from kl3m_data.sources.us.recap.recap_source import RECAPSource
 from kl3m_data.sources.us.recap_docs.recap_docs_source import RECAPDocSource
+from kl3m_data.sources.us.reg_docs.reg_docs_source import RegulationsDocSource
 from kl3m_data.sources.us.usc import USCSource
 from kl3m_data.sources.us.uspto_patents.uspto_patents_source import USPTOPatentSource
 
@@ -57,6 +64,16 @@ def get_source(source_id: str, **kwargs) -> BaseSource:
         return RECAPDocSource(**kwargs)
     if source_id in ("uspto_patents", "us/uspto_patents"):
         return USPTOPatentSource(**kwargs)
+    if source_id in ("eu_oj", "eu/eu_oj"):
+        return EUOJSource(**kwargs)
+    if source_id in ("dockets", "us/dockets"):
+        return DocketsSource(**kwargs)
+    if source_id in ("reg_docs", "us/reg_docs"):
+        return RegulationsDocSource(**kwargs)
+    if source_id in ("dotgov", "us/dotgov"):
+        return DotGovDocSource(**kwargs)
+    if source_id in ("ukleg", "uk/ukleg"):
+        return UKLegislationSource(**kwargs)
     raise ValueError(f"Invalid source ID: {source_id}")
 
 

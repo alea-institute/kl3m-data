@@ -10,6 +10,7 @@ import time
 import urllib.parse
 from typing import List, Dict, Optional, Any, Generator
 
+# packages
 import httpx
 
 # project
@@ -44,6 +45,12 @@ DEFAULT_SORTS = [
 # set up default min and max dates
 DEFAULT_MIN_DATE = datetime.date(1995, 1, 1)
 DEFAULT_MAX_DATE = datetime.date.today()
+
+# set up defaults to avoid duplicates
+DEFAULT_EXCLUDED_COLLECTIONS = (
+    "CFR",
+    "FR",
+)
 
 
 class GovInfoSource(BaseSource):
@@ -104,6 +111,11 @@ class GovInfoSource(BaseSource):
                 self.max_date = DEFAULT_MAX_DATE
         else:
             self.max_date = DEFAULT_MAX_DATE
+
+        # add default exceptions
+        self.excluded_collections = DEFAULT_EXCLUDED_COLLECTIONS
+        if "excluded_collections" in kwargs:
+            self.excluded_collections = kwargs["excluded_collections"]
 
         # set the update and delay
         self.update = kwargs.get("update", False)
@@ -190,10 +202,11 @@ class GovInfoSource(BaseSource):
         # raise an error if we've exhausted retries
         raise RuntimeError(f"Exhausted retries for {url}")
 
+    # pylint: disable=too-many-positional-arguments
     def search(
         self,
         query: str,
-        page_size: int = 10,
+        page_size: int = 100,
         offset_mark: str = "*",
         result_level: str = "default",
         historical: bool = True,
@@ -240,6 +253,10 @@ class GovInfoSource(BaseSource):
         # set the results
         results = []
         for result in response.get("results", []):
+            # skip any excluded collection items
+            if result.get("collectionCode") in self.excluded_collections:
+                continue
+
             # set the result
             results.append(
                 SearchResult(
@@ -288,6 +305,15 @@ class GovInfoSource(BaseSource):
             headers={"X-Api-Key": self.api_key},
         )
 
+        # ensure we don't store collection code with multi-tag values
+        collection_code: Optional[str] = package_json.get("collectionCode", None)
+        if not collection_code:
+            raise ValueError(f"Collection code not found for package {package_id}")
+
+        # now only keep the first element if there is a ;
+        if ";" in collection_code:
+            collection_code = collection_code[: collection_code.find(";")]
+
         # set default and extra fields
         pi = PackageInfo(
             packageId=package_id,
@@ -297,7 +323,7 @@ class GovInfoSource(BaseSource):
             lastModified=package_json.get("lastModified", None),  # type: ignore
             dateIssued=package_json.get("dateIssued", None),  # type: ignore
             collectionName=package_json.get("collectionName", None),  # type: ignore
-            collectionCode=package_json.get("collectionCode", None),  # type: ignore
+            collectionCode=collection_code,
             category=package_json.get("category", None),  # type: ignore
             session=package_json.get("session", None),  # type: ignore
             branch=package_json.get("branch", None),  # type: ignore
@@ -310,6 +336,7 @@ class GovInfoSource(BaseSource):
 
         return pi
 
+    # pylint: disable=too-many-positional-arguments
     def get_package_granules(
         self,
         package_id: str,
@@ -438,6 +465,7 @@ class GovInfoSource(BaseSource):
         ]
         return CollectionSummary(**summary_args)
 
+    # pylint: disable=too-many-positional-arguments
     def get_collection_updates(
         self,
         collection_code: str,
@@ -568,6 +596,32 @@ class GovInfoSource(BaseSource):
 
         return dcd
 
+    @staticmethod
+    def filter_download_types(download: dict[str, str]) -> dict[str, str]:
+        """
+        Filter the download types so that we only keep the ZIP download in cases
+        where there is not at least one txt or pdf alternative.
+
+        Args:
+            download (dict[str, str]): The download types.
+
+        Returns:
+            dict[str, str]: The filtered download types.
+        """
+        # return copy
+        return_download = download.copy()
+
+        # check for the presence of a txt, html, xml, or pdf
+        has_txt = "txtLink" in return_download
+        has_pdf = "pdfLink" in return_download
+
+        # if we have either, then pop the zipLink if it's there
+        if has_txt or has_pdf:
+            return_download.pop("zipLink", None)
+
+        return return_download
+
+    # pylint: disable=too-many-positional-arguments
     def download_link(
         self,
         download_link: str,
@@ -645,7 +699,7 @@ class GovInfoSource(BaseSource):
             # get keys to check for s3 prefix
             collection_id = result.collectionCode
             package_id = result.packageId
-            if self.check_id(f"{collection_id}/{package_id}"):
+            if self.check_id(f"{collection_id}/{package_id}/"):
                 LOGGER.info("Document already exists: %s", result.packageId)
                 return SourceDownloadStatus.EXISTED
 
@@ -658,9 +712,10 @@ class GovInfoSource(BaseSource):
         # track status
         any_failed = False
         any_success = False
-        for download_type, download_link in target_summary.extra.get(
-            "download", {}
-        ).items():
+        download_targets = self.filter_download_types(
+            target_summary.extra.get("download", {})
+        )
+        for download_type, download_link in download_targets.items():
             try:
                 status = self.download_link(
                     download_link=download_link,
@@ -716,7 +771,8 @@ class GovInfoSource(BaseSource):
         # track status
         any_failed = False
         any_success = False
-        for download_type, download_link in target_summary.download.items():
+        download_targets = self.filter_download_types(target_summary.download)
+        for download_type, download_link in download_targets.items():
             try:
                 status = self.download_link(
                     download_link=download_link,

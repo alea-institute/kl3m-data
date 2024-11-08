@@ -376,6 +376,7 @@ class ECFRSource(BaseSource):
     ) -> Generator[SourceProgressStatus, None, None]:
         raise NotImplementedError
 
+    # pylint: disable=too-many-nested-blocks
     def download_all(
         self, **kwargs: dict[str, Any]
     ) -> Generator[SourceProgressStatus, None, None]:
@@ -398,50 +399,50 @@ class ECFRSource(BaseSource):
 
         # iterate through the titles
         for title in titles:
-            latest_title_date = self.get_latest_title_date(title.number)
-            title_structure = self.get_title_structure(title.number, latest_title_date)
-            if current_progress.total is None:
-                current_progress.total = len(title_structure.get_all_nodes())
-            else:
-                current_progress.total += len(title_structure.get_all_nodes())
-            for node in title_structure.get_all_nodes():
-                if node.type == "section":
-                    # update the progress
-                    current_progress.extra = {
-                        "title": title.number,
-                        "date": latest_title_date,
-                        "section": node.identifier,
-                    }
+            try:
+                latest_title_date = self.get_latest_title_date(title.number)
+                title_structure = self.get_title_structure(
+                    title.number, latest_title_date
+                )
+                if current_progress.total is None:
+                    current_progress.total = len(title_structure.get_all_nodes())
+                else:
+                    current_progress.total += len(title_structure.get_all_nodes())
+                for node in title_structure.get_all_nodes():
+                    if node.type == "section":
+                        # update the progress
+                        current_progress.extra = {
+                            "title": title.number,
+                            "date": latest_title_date,
+                            "section": node.identifier,
+                        }
 
-                    # download the document
-                    try:
-                        # check if it already exists
-                        if self.check_id(
-                            f"{latest_title_date}/{title.number}/{node.identifier}.json"
-                        ):
-                            LOGGER.info(
-                                "Document already exists: %s",
-                                f"{title.number}/{node.identifier}",
-                            )
-                        else:
-                            self.download_id(f"{title.number}/{node.identifier}")
-                            time.sleep(ECFR_DELAY)
-                        current_progress.success += 1
-                    except Exception as e:  # pylint: disable=broad-except
-                        LOGGER.error("Error downloading document: %s", str(e))
-                        current_progress.message = str(e)
-                        current_progress.failure += 1
-                        current_progress.status = False
-                    finally:
-                        current_progress.current += 1
-                        yield current_progress
-                        current_progress.message = None
+                        # download the document
+                        try:
+                            # check if it already exists
+                            if self.check_id(
+                                f"{latest_title_date}/{title.number}/{node.identifier}.json"
+                            ):
+                                LOGGER.info(
+                                    "Document already exists: %s",
+                                    f"{title.number}/{node.identifier}",
+                                )
+                            else:
+                                self.download_id(f"{title.number}/{node.identifier}")
+                                time.sleep(ECFR_DELAY)
+                            current_progress.success += 1
+                        except Exception as e:  # pylint: disable=broad-except
+                            LOGGER.error("Error downloading document: %s", str(e))
+                            current_progress.message = str(e)
+                            current_progress.failure += 1
+                            current_progress.status = False
+                        finally:
+                            current_progress.current += 1
+                            yield current_progress
+                            current_progress.message = None
+            except Exception as e:  # pylint: disable=broad-except
+                LOGGER.error("Error downloading title: %s", str(e))
 
         # finalize
         current_progress.done = True
         yield current_progress
-
-
-if __name__ == "__main__":
-    # print(ECFRSource().get_title_html(1, "2022-12-29", section="603.18"))
-    print(ECFRSource().get_latest_title_date(12))

@@ -47,6 +47,9 @@ lxml = "^5.3.0"
 # license: Apache-2.0
 boto3 = "^1.35.22"
 pypdfium2 = "^4.30.0"
+alea-preprocess = "^0.1.10"
+tqdm = "^4.66.5"
+
 
 
 [tool.poetry.group.dev.dependencies]
@@ -71,6 +74,7 @@ max-line-length = 120
 disable = [
     "line-too-long",
     "too-few-public-methods",
+    "too-many-positional-arguments",
     "no-self-argument",
     "cyclic-import",
     "duplicate-code",

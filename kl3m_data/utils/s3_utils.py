@@ -11,9 +11,9 @@ from typing import Optional, Generator
 import boto3
 import botocore.config
 
-from kl3m_data.config import KL3MDataConfig
 
 # project
+from kl3m_data.config import KL3MDataConfig
 from kl3m_data.logger import LOGGER
 
 
