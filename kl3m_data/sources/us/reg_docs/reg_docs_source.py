@@ -95,9 +95,13 @@ class RegulationsDocSource(BaseSource):
         # update the rate limit remaining
         try:
             if self.rate_limit_remaining and self.prior_rate_limit_remaining:
-                LOGGER.info("Rate limit: %d -> %d", self.prior_rate_limit_remaining, self.rate_limit_remaining)
+                LOGGER.info(
+                    "Rate limit: %d -> %d",
+                    self.prior_rate_limit_remaining,
+                    self.rate_limit_remaining,
+                )
                 new_rate_limit_remaining = self.rate_limit_remaining
-            
+
                 if new_rate_limit_remaining > self.prior_rate_limit_remaining:
                     # decrease delay by 2.5%
                     new_delay = max(2.0, self.delay * 0.95)
@@ -107,7 +111,7 @@ class RegulationsDocSource(BaseSource):
                     # increase delay by 5%
                     new_delay = min(6.5, self.delay * 1.10)
                     LOGGER.info("Increasing delay: %f -> %f", self.delay, new_delay)
-                    self.delay = new_delay                   
+                    self.delay = new_delay
                 else:
                     # decrease by 0.5%
                     new_delay = max(3.0, self.delay * 0.9975)
@@ -165,7 +169,7 @@ class RegulationsDocSource(BaseSource):
             try:
                 search_response = self._get_response(search_url)
                 search_data = search_response.json()
-            except Exception as e:
+            except Exception:
                 time.sleep(1)
                 continue
 

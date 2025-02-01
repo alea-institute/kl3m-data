@@ -1,6 +1,6 @@
 [project]
 name = "kl3m-data"
-version = "0.1.0"
+version = "0.1.1"
 description = "KL3M training data collection and preprocesing from the ALEA Institute"
 authors = [{ name = "ALEA Institute", email = "hello@aleainstitute.ai" }]
 requires-python = ">=3.10,<4.0.0"
@@ -39,6 +39,10 @@ dependencies = [
     "pypdfium2>=4.30.0,<5",
     "alea-preprocess>=0.1.10,<0.2",
     "tqdm>=4.66.5,<5",
+    "pyyaml>=6.0.2",
+    "pyarrow>=19.0.0",
+    "tokenizers>=0.21.0",
+    "datasets>=3.2.0",
 ]
 
 [project.urls]
