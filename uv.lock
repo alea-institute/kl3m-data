@@ -657,7 +657,7 @@ wheels = [
 
 [[package]]
 name = "kl3m-data"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "alea-dublincore" },
