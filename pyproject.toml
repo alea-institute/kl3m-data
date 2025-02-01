@@ -1,19 +1,17 @@
-[tool.poetry]
+[project]
 name = "kl3m-data"
-version = "0.1.0"
+version = "0.1.1"
 description = "KL3M training data collection and preprocesing from the ALEA Institute"
-authors = ["ALEA Institute <hello@aleainstitute.ai>"]
-license = "MIT"
+authors = [{ name = "ALEA Institute", email = "hello@aleainstitute.ai" }]
+requires-python = ">=3.10,<4.0.0"
 readme = "README.md"
-homepage = "https://aleainstitute.ai/"
-repository = "https://github.com/alea-institute/kl3m-data"
-keywords = ["alea", "kl3m", "data", "training data"]
-
-# dist build configuration
-include = ["kl3m_data"]
-packages = [{ include = "kl3m_data" }]
-exclude = ["tests", "docs", "examples", "docker"]
-
+license = "MIT"
+keywords = [
+    "alea",
+    "kl3m",
+    "data",
+    "training data",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -29,45 +27,65 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Information Analysis",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    "Topic :: Utilities"
+    "Topic :: Utilities",
+]
+dependencies = [
+    "alea-dublincore>=0.1.0,<0.2",
+    "rich>=13.8.1,<14",
+    "httpx[http2, socks]>=0.27.2,<0.28",
+    "playwright>=1.47.0,<2",
+    "lxml>=5.3.0,<6",
+    "boto3>=1.35.22,<2",
+    "pypdfium2>=4.30.0,<5",
+    "alea-preprocess>=0.1.10,<0.2",
+    "tqdm>=4.66.5,<5",
+    "pyyaml>=6.0.2",
+    "pyarrow>=19.0.0",
+    "tokenizers>=0.21.0",
+    "datasets>=3.2.0",
 ]
 
-[tool.poetry.dependencies]
-python = ">=3.10,<4.0.0"
-# license: MIT
-alea-dublincore = "^0.1.0"
-# license: MIT
-rich = "^13.8.1"
-# license: BSD-3
-httpx = {version ="^0.27.2", extras = ["http2", "socks"]}
-# license: Apache-2.0
-playwright = "^1.47.0"
-# license: BSD-3
-lxml = "^5.3.0"
-# license: Apache-2.0
-boto3 = "^1.35.22"
-pypdfium2 = "^4.30.0"
-alea-preprocess = "^0.1.10"
-tqdm = "^4.66.5"
+[project.urls]
+Homepage = "https://aleainstitute.ai/"
+Repository = "https://github.com/alea-institute/kl3m-data"
 
+[dependency-groups]
+dev = [
+    "pytest>=8.3.2,<9",
+    "pytest-asyncio>=0.23.8,<0.24",
+    "pytest-benchmark>=4.0.0,<5",
+    "pytest-cov>=5.0.0,<6",
+    "pylint>=3.2.7,<4",
+    "mypy>=1.11.2,<2",
+]
 
+[tool.hatch.build.targets.sdist]
+include = [
+    "kl3m_data",
+    "kl3m_data",
+]
+exclude = [
+    "tests",
+    "docs",
+    "examples",
+    "docker",
+]
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.3.2"
-pytest-asyncio = "^0.23.8"
-pytest-benchmark = "^4.0.0"
-pytest-cov = "^5.0.0"
-pylint = "^3.2.7"
-
-
-# extras
-mypy = "^1.11.2"
-[tool.poetry.extras]
-
+[tool.hatch.build.targets.wheel]
+include = [
+    "kl3m_data",
+    "kl3m_data",
+]
+exclude = [
+    "tests",
+    "docs",
+    "examples",
+    "docker",
+]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.pylint]
 max-line-length = 120

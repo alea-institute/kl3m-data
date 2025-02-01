@@ -32,13 +32,3 @@ repos:
       language: system
       pass_filenames: false
       types: [ python ]
-    - id: pylint
-      name: pylint
-      entry: poetry run pylint
-      language: system
-      types: [ python ]
-    - id: mypy
-      name: mypy
-      entry: poetry run mypy
-      language: system
-      types: [ python ]

@@ -67,7 +67,7 @@ class RegulationsDocSource(BaseSource):
             )
 
         self.update = kwargs.get("update", False)
-        self.delay = kwargs.get("delay", 0)
+        self.delay = kwargs.get("delay", 5.0)
         self.rate_limit = 0
 
         # initialize the s3 client
@@ -92,29 +92,31 @@ class RegulationsDocSource(BaseSource):
         Args:
             headers (httpx.Headers): The headers from the response.
         """
-        # parse headers
-        try:
-            new_rate_limit = int(headers["x-ratelimit-limit"])
-            self.rate_limit = new_rate_limit
-        except KeyError:
-            LOGGER.warning("Rate limit headers not found in response")
-
         # update the rate limit remaining
         try:
-            new_rate_limit_remaining = int(headers["x-ratelimit-remaining"])
+            if self.rate_limit_remaining and self.prior_rate_limit_remaining:
+                LOGGER.info(
+                    "Rate limit: %d -> %d",
+                    self.prior_rate_limit_remaining,
+                    self.rate_limit_remaining,
+                )
+                new_rate_limit_remaining = self.rate_limit_remaining
 
-            if self.rate_limit_remaining:
-                if new_rate_limit_remaining > self.rate_limit_remaining:
+                if new_rate_limit_remaining > self.prior_rate_limit_remaining:
                     # decrease delay by 2.5%
-                    self.delay = max(3.0, self.delay * 0.975)
-                elif new_rate_limit_remaining < self.rate_limit_remaining:
+                    new_delay = max(2.0, self.delay * 0.95)
+                    LOGGER.info("Decreasing delay: %f -> %f", self.delay, new_delay)
+                    self.delay = new_delay
+                elif new_rate_limit_remaining < self.prior_rate_limit_remaining:
                     # increase delay by 5%
-                    self.delay = min(7.0, self.delay * 1.05)
+                    new_delay = min(6.5, self.delay * 1.10)
+                    LOGGER.info("Increasing delay: %f -> %f", self.delay, new_delay)
+                    self.delay = new_delay
                 else:
                     # decrease by 0.5%
-                    self.delay = max(4.0, self.delay * 0.995)
-
-            self.rate_limit_remaining = new_rate_limit_remaining
+                    new_delay = max(3.0, self.delay * 0.9975)
+                    LOGGER.info("Decreasing delay: %f -> %f", self.delay, new_delay)
+                    self.delay = new_delay
         except KeyError:
             LOGGER.warning("Rate limit remaining not found in response")
 
@@ -163,8 +165,13 @@ class RegulationsDocSource(BaseSource):
                 f"&page[number]={page_number}"
                 f"&api_key={self.api_key}"
             )
-            search_response = self._get_response(search_url)
-            search_data = search_response.json()
+
+            try:
+                search_response = self._get_response(search_url)
+                search_data = search_response.json()
+            except Exception:
+                time.sleep(1)
+                continue
 
             # update the delay and sleep
             self.update_rate_limit(search_response.headers)
@@ -463,6 +470,7 @@ class RegulationsDocSource(BaseSource):
         while current_date <= end_date:
             yield from self.download_date(current_date, **kwargs)
             current_date += datetime.timedelta(days=1)
+            time.sleep(5)
 
         # return the final status
         current_progress.done = True

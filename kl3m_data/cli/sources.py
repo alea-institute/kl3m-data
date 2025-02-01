@@ -213,6 +213,45 @@ def source_download_all(source: BaseSource, **kwargs) -> None:
                 progress.console.log(status.message)
 
 
+# download collection for govinfo
+def download_collection(source: BaseSource, collection: str, **kwargs) -> None:
+    """
+    Download all data from the given source with a progress bar.
+
+    Args:
+        source: The data source to download from.
+        **kwargs: Additional keyword arguments for the download
+
+    Returns:
+        None
+    """
+    progress_columns = [
+        TextColumn("[bold blue]{task.description}"),
+        TextColumn("[progress.percentage]{task.completed}/{task.total}"),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        TextColumn("[bold blue]{task.fields[extra]}"),
+    ]
+    with Progress(*progress_columns) as progress:
+        download_task = progress.add_task(
+            f"[bold blue]Downloading {collection}...",
+            total=None,
+            extra="{}",
+        )
+        for status in source.download_collection(collection, **kwargs):
+            progress.update(
+                download_task,
+                completed=status.current,
+                total=status.total,
+                advance=1,
+                description=status.message,
+                extra=status.extra,
+            )
+            if status.message:
+                progress.console.log(status.message)
+
+
 def main() -> None:
     """
     Main entry point for the KL3M Data CLI.
@@ -259,6 +298,12 @@ def main() -> None:
         start_date = datetime.date.fromisoformat(kwargs.pop("start_date"))
         end_date = datetime.date.fromisoformat(kwargs.pop("end_date"))
         source_download_date_range(source, start_date, end_date, **kwargs)
+    elif args.command == "download_collection":
+        # ensure we have a collection in kwargs
+        if "collection" not in kwargs:
+            raise ValueError("Missing collection.")
+        collection = kwargs.pop("collection")
+        download_collection(source, collection, **kwargs)
     elif args.command == "download_all":
         source_download_all(source, **kwargs)
     else:

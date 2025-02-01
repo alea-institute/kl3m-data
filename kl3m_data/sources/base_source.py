@@ -110,6 +110,7 @@ class BaseSource(abc.ABC):
         # rate limit if needed
         self.rate_limit_limit: Optional[int] = None  # x-ratelimit-limit
         self.rate_limit_remaining: Optional[int] = None  # x-ratelimit-remaining
+        self.prior_rate_limit_remaining: Optional[int] = None  # prior value of above
 
         # log it
         LOGGER.info("Initialized source %s", self.metadata.dataset_id)
@@ -203,6 +204,7 @@ class BaseSource(abc.ABC):
                 if key.lower() == "x-ratelimit-limit":
                     self.rate_limit_limit = int(value)
                 elif key.lower() == "x-ratelimit-remaining":
+                    self.prior_rate_limit_remaining = self.rate_limit_remaining
                     self.rate_limit_remaining = int(value)
 
             # check the response

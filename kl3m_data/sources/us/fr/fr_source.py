@@ -388,7 +388,7 @@ class FRSource(BaseSource):
                     creator=creator_list,
                     language="en",
                     subject=subjects,
-                    bibliographic_citation=f"{doc_data['citation']}.  {doc_data["publication_date"]}",
+                    bibliographic_citation=f"{doc_data['citation']}.  {doc_data['publication_date']}",
                 )
                 upload_doc.to_s3()
                 any_success = True

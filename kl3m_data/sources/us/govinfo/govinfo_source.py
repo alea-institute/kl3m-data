@@ -866,6 +866,75 @@ class GovInfoSource(BaseSource):
         # download the package
         return self.download_package(str(document_id))
 
+    def download_collection(
+        self, collection_code: str, **kwargs: dict[str, Any]
+    ) -> Generator[SourceProgressStatus, None, None]:
+        """
+        Download all documents for a given collection.
+
+        Args:
+            collection_code (str): The collection code.
+            kwargs (dict[str, Any]): Additional keyword arguments.
+
+        Yields:
+            SourceProgressStatus: The progress status.
+        """
+        # set up source prog status
+        current_progress = SourceProgressStatus(
+            total=None, description="Downloading GovInfo resources..."
+        )
+
+        # use collection: to get the documents
+        query = f"collection:{collection_code}"
+
+        search_results = self.search(
+            query=query,
+            page_size=1000,
+        )
+
+        while True:
+            if not search_results.results or len(search_results.results) == 0:
+                break
+
+            current_progress.total = search_results.count
+            for result in search_results.results:
+                try:
+                    status = self.download_search_result(result)
+                    if status in (
+                        SourceDownloadStatus.FAILURE,
+                        SourceDownloadStatus.PARTIAL,
+                    ):
+                        current_progress.failure += 1
+                    elif status in (SourceDownloadStatus.SUCCESS,):
+                        current_progress.success += 1
+                    current_progress.extra = {
+                        "package_id": result.packageId,
+                        "granule_id": result.granuleId,
+                        "collection_code": result.collectionCode,
+                        "rate-limit-remaining": self.rate_limit_remaining,
+                    }
+                except Exception as e:  # pylint: disable=broad-except
+                    LOGGER.warning("Error downloading %s: %s", result, e)
+                    current_progress.message = str(e)
+                    current_progress.failure += 1
+                    current_progress.status = False
+                finally:
+                    # update the prog bar
+                    current_progress.current += 1
+                    yield current_progress
+                    current_progress.message = None
+
+            # get the next page
+            search_results = self.search(
+                query=query,
+                page_size=1000,
+                offset_mark=search_results.offsetMark,
+            )
+
+        # yield the final status
+        current_progress.done = True
+        yield current_progress
+
     def download_date(
         self, date: datetime.date, **kwargs: dict[str, Any]
     ) -> Generator[SourceProgressStatus, None, None]:
