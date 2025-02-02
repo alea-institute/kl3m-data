@@ -190,6 +190,11 @@ def get_sample_batch(
 
             # yield tokens for each mime type
             for mime_type in document.get("representations", {}):
+                # exclude edgar uu data
+                if "edgar" in object_dataset:
+                    if document["representations"][mime_type][0] == 47842:
+                        continue
+
                 yield {
                     "identifier": document["identifier"],
                     "dataset": object_dataset,
