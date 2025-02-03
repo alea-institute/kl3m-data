@@ -32,8 +32,8 @@ METRIC_WEIGHTS = {
     "char_entropy": 0.5,
     "max_token_frequency_ratio": 1.0,
     "repetition_rate": 1.5,
-    "ratio_format_tokens": 1.0,
-    "ratio_nospace_bigrams": 2.0,
+    "ratio_format_tokens": 100.0,
+    "ratio_nospace_bigrams": 3.0,
 }
 
 EXPECTED_RANGES = {

@@ -1,4 +1,9 @@
-"""CLI for processing and uploading parquet-based files and datasets."""
+"""CLI for processing and uploading parquet-based files and datasets.
+
+For filtering, common ranges are:
+ - score <= 10.0
+ - adjusted_score <= 0.003
+"""
 
 # imports
 import argparse
@@ -264,6 +269,12 @@ def main() -> None:
         action="store_true",
         help="Use adjusted score for filtering",
     )
+    filter_parser.add_argument(
+        "--num-hash-tokens",
+        type=int,
+        default=1024,
+        help="Number of tokens to hash for deduplication",
+    )
 
     # parse all
     args = parser.parse_args()
@@ -351,8 +362,11 @@ def main() -> None:
                             metrics = get_metrics(row)
                             if metrics[score_type] <= score_threshold:
                                 # check blake2b hash of tokens
+                                tokens_to_hash = row.get("tokens", [])[
+                                    0 : args.num_hash_tokens
+                                ]
                                 token_hash = hashlib.blake2b(
-                                    ",".join(map(str, row.get("tokens", []))).encode(),
+                                    ",".join(map(str, tokens_to_hash)).encode(),
                                     digest_size=16,
                                 ).hexdigest()
 
