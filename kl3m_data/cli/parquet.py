@@ -3,12 +3,13 @@
 # imports
 import argparse
 import gzip
+import hashlib
 import json
 import random
 from typing import Callable, Generator, Optional
 
 # packages
-from datasets import Dataset
+from datasets import Dataset, load_dataset
 from rich.progress import (
     Progress,
     TextColumn,
@@ -16,6 +17,9 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
+from huggingface_hub import hf_api
+
+from kl3m_data.metrics.quality_metrics import get_metrics
 
 # project imports
 from kl3m_data.utils.parquet_utils import serialize_document, deserialize_document_bytes
@@ -233,7 +237,7 @@ def main() -> None:
         "--clobber", action="store_true", help="Overwrite existing parquet files"
     )
 
-    # Sample command
+    # upload command
     upload_parser = subparsers.add_parser("upload")
     upload_parser.add_argument(
         "datasets", help="Comma-separated dataset IDs to sample from"
@@ -248,6 +252,20 @@ def main() -> None:
     )
     upload_parser.add_argument("--contains", help="Filter objects containing text")
     upload_parser.add_argument("--ends-with", help="Filter objects ending with text")
+
+    # quality filter command is like this:
+    # filter [input-dataset(s)] [output-dataset] [score]
+    filter_parser = subparsers.add_parser("filter")
+    filter_parser.add_argument("datasets", help="Dataset ID or * prefix to sample from")
+    filter_parser.add_argument("output_name", help="Output dataset name")
+    filter_parser.add_argument("score", type=float, help="Score to filter by")
+    filter_parser.add_argument(
+        "--adjusted",
+        action="store_true",
+        help="Use adjusted score for filtering",
+    )
+
+    # parse all
     args = parser.parse_args()
 
     if args.command == "convert":
@@ -289,6 +307,87 @@ def main() -> None:
         )
 
         # Push to hub
+        dataset.push_to_hub(args.output_name)
+    elif args.command == "filter":
+        # get score threshold
+        score_threshold = args.score
+        if score_threshold <= 0.0:
+            raise ValueError("Score threshold must be float > 0.0")
+
+        # get list of datasets
+        dataset_name = args.datasets
+        if dataset_name.endswith("*"):
+            dataset_list = []
+            for dataset in hf_api.list_datasets(author="alea-institute"):
+                if dataset.id.startswith(dataset_name[:-1]):
+                    dataset_list.append(dataset.id)
+        else:
+            dataset_list = [dataset_name]
+
+        score_type = "adjusted_score" if args.adjusted else "score"
+
+        # load and filter each
+        def yield_records():
+            seen_hashes = set()
+            for dataset_id in dataset_list:
+                filter_stats = {
+                    "dataset": dataset_id,
+                    "included": 0,
+                    "excluded_score": 0,
+                    "excluded_empty": 0,
+                    "excluded_duplicate": 0,
+                }
+                try:
+                    current_dataset = load_dataset(
+                        dataset_id, split="train", streaming=True
+                    )
+
+                    for row in current_dataset:
+                        try:
+                            if len(row.get("tokens", [])) == 0:
+                                filter_stats["excluded_empty"] += 1
+                                continue
+
+                            metrics = get_metrics(row)
+                            if metrics[score_type] <= score_threshold:
+                                # check blake2b hash of tokens
+                                token_hash = hashlib.blake2b(
+                                    ",".join(map(str, row.get("tokens", []))).encode(),
+                                    digest_size=16,
+                                ).hexdigest()
+
+                                # check for dupe
+                                if token_hash in seen_hashes:
+                                    filter_stats["excluded_duplicate"] += 1
+                                    continue
+                                else:
+                                    filter_stats["included"] += 1
+                                    seen_hashes.add(token_hash)
+
+                                # yield if not seen
+                                yield {
+                                    "identifier": row.get("identifier"),
+                                    "dataset": row.get("dataset"),
+                                    "mime_type": row.get("mime_type"),
+                                    "score": metrics.get("score"),
+                                    "tokens": row.get("tokens", []),
+                                }
+                            else:
+                                filter_stats["excluded_score"] += 1
+                        except Exception as e:
+                            print(e)
+                            continue
+                except Exception as e:
+                    print(e)
+                    continue
+
+                # print filter stats
+                print(filter_stats)
+
+        # create dataset
+        dataset = Dataset.from_generator(yield_records)
+
+        # push to hub
         dataset.push_to_hub(args.output_name)
 
 

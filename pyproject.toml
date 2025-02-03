@@ -43,6 +43,8 @@ dependencies = [
     "pyarrow>=19.0.0",
     "tokenizers>=0.21.0",
     "datasets>=3.2.0",
+    "argilla>=2.7.0",
+    "polars>=1.21.0",
 ]
 
 [project.urls]
@@ -57,6 +59,12 @@ dev = [
     "pytest-cov>=5.0.0,<6",
     "pylint>=3.2.7,<4",
     "mypy>=1.11.2,<2",
+]
+jupyter = [
+    "altair>=5.5.0",
+    "jupyterlab>=4.3.5",
+    "matplotlib>=3.10.0",
+    "scikit-learn>=1.6.1",
 ]
 
 [tool.hatch.build.targets.sdist]
