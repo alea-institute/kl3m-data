@@ -275,6 +275,9 @@ def main() -> None:
         default=1024,
         help="Number of tokens to hash for deduplication",
     )
+    filter_parser.add_argument(
+        "--clobber", action="store_true", help="Overwrite existing dataset"
+    )
 
     # parse all
     args = parser.parse_args()
@@ -324,6 +327,12 @@ def main() -> None:
         score_threshold = args.score
         if score_threshold <= 0.0:
             raise ValueError("Score threshold must be float > 0.0")
+
+        # check if the output name already exists
+        if hf_api.dataset_info(args.output_name) is not None and not args.clobber:
+            raise ValueError(
+                f"Output dataset {args.output_name} already exists. Choose a different name or run with --clobber to overwrite."
+            )
 
         # get list of datasets
         dataset_name = args.datasets
