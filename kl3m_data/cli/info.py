@@ -11,9 +11,8 @@ from pathlib import Path
 
 # packages
 import polars as pl
-import tqdm
 from datasets import load_dataset
-from huggingface_hub import hf_api, DatasetInfo
+from huggingface_hub import hf_api
 
 
 def get_token_statistics(dataset_id: str) -> dict[str, int | float]:
@@ -34,7 +33,9 @@ def get_token_statistics(dataset_id: str) -> dict[str, int | float]:
         return {"num_tokens": [len(r) for r in sample]}
 
     # map
-    dataset = dataset.map(count_tokens, batched=True, input_columns=["tokens"], remove_columns=["tokens"])
+    dataset = dataset.map(
+        count_tokens, batched=True, input_columns=["tokens"], remove_columns=["tokens"]
+    )
 
     # get statistics on the num_tokens column:
     # mean, median, min, max, std, sum
@@ -48,7 +49,9 @@ def get_token_statistics(dataset_id: str) -> dict[str, int | float]:
     }
 
 
-def get_datasets(dataset_prefix: str = "kl3m-", count_tokens: bool = False) -> list[dict]:
+def get_datasets(
+    dataset_prefix: str = "kl3m-", count_tokens: bool = False
+) -> list[dict]:
     """
     Get the dataset info from the Huggingface hub.
 
@@ -60,12 +63,14 @@ def get_datasets(dataset_prefix: str = "kl3m-", count_tokens: bool = False) -> l
         dict: The dataset info.
     """
     datasets = []
-    for dataset in hf_api.list_datasets(author='alea-institute', full=True):
+    for dataset in hf_api.list_datasets(author="alea-institute", full=True):
         # filter by id
-        if dataset.id.startswith('alea-institute/' + dataset_prefix):
+        if dataset.id.startswith("alea-institute/" + dataset_prefix):
             try:
                 # print(dataset.cardData.dataset_info)
-                num_samples = dataset.cardData.dataset_info.get('splits', [{}])[0].get("num_examples", 0)
+                num_samples = dataset.cardData.dataset_info.get("splits", [{}])[0].get(
+                    "num_examples", 0
+                )
                 download_size = dataset.cardData.dataset_info.get("download_size", 0)
             except AttributeError:
                 num_samples = 0

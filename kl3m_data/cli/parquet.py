@@ -335,7 +335,7 @@ def main() -> None:
                 raise ValueError(
                     f"Output dataset {args.output_name} already exists. Choose a different name or run with --clobber to overwrite."
                 )
-        except RepositoryNotFoundError as e:
+        except RepositoryNotFoundError:
             # need to create for the first time
             pass
 
