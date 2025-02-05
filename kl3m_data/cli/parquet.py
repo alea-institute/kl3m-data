@@ -23,6 +23,7 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 from huggingface_hub import hf_api
+from huggingface_hub.errors import RepositoryNotFoundError
 
 from kl3m_data.metrics.quality_metrics import get_metrics
 
@@ -329,10 +330,14 @@ def main() -> None:
             raise ValueError("Score threshold must be float > 0.0")
 
         # check if the output name already exists
-        if hf_api.dataset_info(args.output_name) is not None and not args.clobber:
-            raise ValueError(
-                f"Output dataset {args.output_name} already exists. Choose a different name or run with --clobber to overwrite."
-            )
+        try:
+            if hf_api.dataset_info(args.output_name) is not None and not args.clobber:
+                raise ValueError(
+                    f"Output dataset {args.output_name} already exists. Choose a different name or run with --clobber to overwrite."
+                )
+        except RepositoryNotFoundError as e:
+            # need to create for the first time
+            pass
 
         # get list of datasets
         dataset_name = args.datasets
