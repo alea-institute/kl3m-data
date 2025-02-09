@@ -37,7 +37,7 @@ class KL3MDataConfig:
 
     # aws/s3 configuration
     default_s3_bucket: str = "data.kl3m.ai"
-    default_s3_region: str = "us-east-2"
+    default_s3_region: str = "us-east-1"
     default_s3_pool_size: int = 8
     default_s3_connect_timeout: int = 10
     default_s3_read_timeout: int = 10
