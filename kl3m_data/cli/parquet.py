@@ -35,12 +35,16 @@ from kl3m_data.utils.s3_utils import (
     put_object_bytes,
     check_object_exists,
     get_object_bytes,
+    iter_prefix_shard,
 )
 from kl3m_data.logger import LOGGER
 
 
 def convert_dataset(
-    dataset_id: str, max_size: int = 1024 * 1024 * 1, clobber: bool = False
+    dataset_id: str,
+    max_size: int = 1024 * 1024 * 1,
+    clobber: bool = False,
+    shard_prefix: Optional[str] = None,
 ) -> None:
     """
     Convert dataset JSON representations to parquet format.
@@ -49,6 +53,7 @@ def convert_dataset(
         dataset_id (str): The dataset ID to convert
         max_size (int): Maximum file size in bytes to convert
         clobber (bool): Whether to overwrite existing parquet files
+        shard_prefix (str): Optional prefix for sharding
 
     Returns:
         None
@@ -82,7 +87,12 @@ def convert_dataset(
             status=f"converted: {converted} skipped: {skipped} failed: {failed}",
         )
 
-        path_iterator = iter_prefix(s3_client, "data.kl3m.ai", representation_path)
+        if shard_prefix:
+            path_iterator = iter_prefix_shard(
+                s3_client, "data.kl3m.ai", representation_path, shard_prefix
+            )
+        else:
+            path_iterator = iter_prefix(s3_client, "data.kl3m.ai", representation_path)
 
         for object_key in path_iterator:
             progress.update(
@@ -236,11 +246,14 @@ def main() -> None:
     convert_parser.add_argument(
         "--max-size",
         type=int,
-        default=1024 * 1024,
+        default=4 * 1024 * 1024,
         help="Max file size in bytes to convert",
     )
     convert_parser.add_argument(
         "--clobber", action="store_true", help="Overwrite existing parquet files"
+    )
+    convert_parser.add_argument(
+        "--shard-prefix", help="Prefix for sharding", default=None
     )
 
     # upload command
@@ -284,7 +297,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "convert":
-        convert_dataset(args.dataset, args.max_size, args.clobber)
+        convert_dataset(args.dataset, args.max_size, args.clobber, args.shard_prefix)
 
     elif args.command == "upload":
         # Validate filters
