@@ -18,6 +18,7 @@ from kl3m_data.parsers import (
     generic_json,
     generic_pdf,
     generic_xml,
+    generic_tika,
 )
 from kl3m_data.parsers.parser_types import (
     ParsedDocument,
@@ -93,8 +94,12 @@ def parse_zip_member(
             )
         )
     else:
-        LOGGER.info(
-            "No parser found for object format=%s, key=%s", object_format, object_url
+        documents.extend(
+            generic_tika.parse_tika(
+                object_content,
+                object_source,
+                object_url,
+            )
         )
 
     return documents
@@ -134,13 +139,20 @@ def parse(
             object_format = content_info.media_type
 
             # extend by parsing directly
-            documents.extend(
-                parse_zip_member(
-                    member_content,
-                    object_source=source,
-                    object_format=object_format,
-                    object_url=identifier + "/" + member.filename,
+            try:
+                documents.extend(
+                    parse_zip_member(
+                        member_content,
+                        object_source=source,
+                        object_format=object_format,
+                        object_url=identifier + "/" + member.filename,
+                    )
                 )
-            )
+            except Exception as e:
+                LOGGER.error(
+                    "Error parsing ZIP member %s: %s",
+                    member.filename,
+                    e,
+                )
 
     return documents
