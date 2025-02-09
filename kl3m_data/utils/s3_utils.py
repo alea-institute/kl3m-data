@@ -30,6 +30,7 @@ def get_s3_config(
     connect_timeout: Optional[int] = None,
     read_timeout: Optional[int] = None,
     retry_count: Optional[int] = None,
+    region_name: Optional[str] = None,
 ) -> botocore.config.Config:
     """
     Get an S3 configuration object with the specified parameters.
@@ -39,6 +40,7 @@ def get_s3_config(
         connect_timeout (int): Connection timeout in seconds.
         read_timeout (int): Read timeout in seconds.
         retry_count (int): Number of retries.
+        region_name (str): AWS region name.
 
     Returns:
         botocore.config.Config: An S3 configuration object.
@@ -58,6 +60,18 @@ def get_s3_config(
             "max_attempts": retry_count,
             "mode": "standard",
         }
+    if region_name is not None:
+        config.region_name = region_name
+
+    # log all details
+    LOGGER.info(
+        "S3 configured with region=%s, pool_size=%s, connect_timeout=%s, read_timeout=%s, retry_count=%s",
+        region_name,
+        pool_size,
+        connect_timeout,
+        read_timeout,
+        retry_count,
+    )
 
     return config
 
@@ -424,7 +438,7 @@ class AwsAuth(httpx.Auth):
 async def get_object_bytes_async(
     bucket: str,
     key: str,
-    region: str = "us-east-1",
+    aws_region: Optional[str] = None,
     aws_access_key_id: Optional[str] = None,
     aws_secret_access_key: Optional[str] = None,
     verify_ssl: bool = True,
@@ -447,16 +461,22 @@ async def get_object_bytes_async(
         aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
     if aws_secret_access_key is None:
         aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+    if aws_region is None:
+        aws_region = os.getenv(
+            "AWS_REGION", os.getenv("AWS_DEFAULT_REGION", "us-east-1")
+        )
 
     # Use the correct S3 endpoint format
     encoded_key = quote(key, safe="")
-    object_url = f"https://s3.{region}.amazonaws.com/{bucket}/{encoded_key}"
+    object_url = f"https://s3.{aws_region}.amazonaws.com/{bucket}/{encoded_key}"
 
     async with httpx.AsyncClient(verify=verify_ssl) as client:
         try:
             response = await client.get(
                 object_url,
-                auth=AwsAuth(aws_access_key_id, aws_secret_access_key, region, "s3"),
+                auth=AwsAuth(
+                    aws_access_key_id, aws_secret_access_key, aws_region, "s3"
+                ),
                 timeout=DEFAULT_TIMEOUT,
             )
             response.raise_for_status()
