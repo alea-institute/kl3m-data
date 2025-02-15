@@ -7,7 +7,7 @@ import csv
 import datetime
 import hashlib
 import urllib.parse
-from typing import Any, Generator
+from typing import Any, Generator, Optional
 
 # packages
 
@@ -27,6 +27,57 @@ BASE_SPARQL_URL = "http://publications.europa.eu/webapi/rdf/sparql"
 # default years
 EU_OJ_MIN_YEAR = 2004
 EU_OJ_MAX_YEAR = datetime.datetime.now().year
+
+EU_OJ_LANG_LIST = [
+    # Czech
+    "CES",
+    # Danish
+    "DAN",
+    # German
+    "DEU",
+    # Greek
+    "ELL",
+    # English
+    "ENG",
+    # Spanish
+    "SPA",
+    # Estonian
+    "EST",
+    # Finnish
+    "FIN",
+    # French
+    "FRA",
+    # Hungarian
+    "HUN",
+    # Italian
+    "ITA",
+    # Lithuanian
+    "LIT",
+    # Latvian
+    "LAV",
+    # Maltese
+    "MLT",
+    # Dutch
+    "NLD",
+    # Polish
+    "POL",
+    # Portuguese
+    "POR",
+    # Slovak
+    "SLK",
+    # Slovenian
+    "SLV",
+    # Swedish
+    "SWE",
+]
+
+EU_OJ_PRIMARY_LANG_LIST = [
+    # english, spanish, french, german
+    "ENG",
+    "SPA",
+    "FRA",
+    "DEU",
+]
 
 
 class EUOJSource(BaseSource):
@@ -83,102 +134,101 @@ class EUOJSource(BaseSource):
                 ) from e
 
     @staticmethod
-    def generate_sparql_list_query(year: int) -> str:
+    def generate_sparql_query_url(
+        year: int,
+        language: str = "ENG",
+        result_format: str = "csv",
+        timeout: int = 0,
+        debug: str = "on",
+        run: str = "Run Query",
+    ):
         """
-        Generates a SPARQL query string for the specified year.
+        Generate a SPARQL query URL for the Official Journal with the given parameters.
 
         Args:
-            year (str): The year to filter the documents by (e.g., "2021").
+            year (str or int): The year to filter the documents (e.g., 2023).
+            language (str): The language code to filter titles (e.g., 'en').
+            result_format (str): The output format (default: "csv").
+            timeout (int): The query timeout in milliseconds (default: 0 for no timeout).
+            debug (str): Debug mode ("on" or "off", default: "on").
+            run (str): The run parameter to trigger query execution (default: "Run Query").
 
         Returns:
-            str: The formatted SPARQL query.
+            str: The complete URL for the SPARQL query.
         """
-        query = f"""
-        PREFIX cdm: <http://publications.europa.eu/ontology/cdm#>
-        PREFIX owl: <http://www.w3.org/2002/07/owl#>
+        base_url = "https://publications.europa.eu/webapi/rdf/sparql"
 
-        SELECT DISTINCT ?OJ ?title_ (GROUP_CONCAT(DISTINCT ?author; SEPARATOR=",") AS ?authors)
-               ?date_document ?manif_fmx4 ?fmx4_to_download
-        WHERE {{
-            ?work a cdm:official-journal .
-            ?work cdm:work_date_document ?date_document .
-            FILTER(SUBSTR(STR(?date_document), 1, 4) = "{year}")
-            ?work cdm:work_created_by_agent ?author .
-            ?work owl:sameAs ?OJ .
-            FILTER(REGEX(STR(?OJ), '/oj/'))
+        # Build the SPARQL query with proper formatting.
+        query = (
+            "PREFIX cdm: <http://publications.europa.eu/ontology/cdm#>\n"
+            'SELECT distinct ?OJ ?lang ?title_ group_concat(distinct ?author; separator=",") as ?authors ?date_document ?manif_fmx4 ?fmx4_to_download\n'
+            "WHERE {\n"
+            "  ?work a cdm:official-journal.\n"
+            "  ?work cdm:work_date_document ?date_document.\n"
+            f"  FILTER(substr(str(?date_document),1,4)='{year}')\n"
+            "  ?work cdm:work_created_by_agent ?author.\n"
+            "  ?work owl:sameAs ?OJ.\n"
+            "  FILTER(regex(str(?OJ),'/oj/'))\n"
+            "  OPTIONAL {\n"
+            "    ?exp cdm:expression_title ?title.\n"
+            "    ?exp cdm:expression_uses_language ?lang.\n"
+            "    ?exp cdm:expression_belongs_to_work ?work.\n"
+            f"    FILTER(?lang = <http://publications.europa.eu/resource/authority/language/{language}>)\n"
+            "    OPTIONAL {\n"
+            "      ?manif_fmx4 cdm:manifestation_manifests_expression ?exp.\n"
+            "      ?manif_fmx4 cdm:manifestation_type ?type_fmx4.\n"
+            "      FILTER(str(?type_fmx4)='fmx4')\n"
+            "    }\n"
+            "  }\n"
+            "  BIND(IF(BOUND(?title), ?title, 'The Official Journal does not exist in that language'@en) AS ?title_)\n"
+            "  BIND(IF(BOUND(?manif_fmx4), IRI(concat(str(?manif_fmx4), '/zip')), '') AS ?fmx4_to_download)\n"
+            "}\n"
+            "ORDER BY ?date_document"
+        )
 
-            OPTIONAL {{
-
-                ?exp cdm:expression_title ?title .
-                ?exp cdm:expression_uses_language ?lang .
-                ?exp cdm:expression_belongs_to_work ?work .
-                FILTER(?lang = <http://publications.europa.eu/resource/authority/language/ENG>)
-
-                OPTIONAL {{
-                    ?manif_fmx4 cdm:manifestation_manifests_expression ?exp .
-                    ?manif_fmx4 cdm:manifestation_type ?type_fmx4 .
-                    FILTER(STR(?type_fmx4) = 'fmx4')
-                }}
-            }}
-
-            BIND(IF(BOUND(?title), ?title, "The Official Journal does not exist in that language"@en) AS ?title_)
-            BIND(IF(BOUND(?manif_fmx4), IRI(CONCAT(STR(?manif_fmx4), "/zip")), "") AS ?fmx4_to_download)
-        }}
-        ORDER BY ?date_document
-        """.strip()
-
-        return query
-
-    def get_sparql_list_url(self, year: int) -> str:
-        """
-        Generates the download URL for the SPARQL query based on the specified year.
-
-        Args:
-            year (str): The year to filter the documents by (e.g., "2021").
-
-        Returns:
-            str: The complete download URL with the encoded SPARQL query.
-        """
-
-        query = self.generate_sparql_list_query(year)
-
-        # Define the query parameters
+        # Set up the query parameters for the URL.
         params = {
             "default-graph-uri": "",
             "query": query,
-            "format": "csv",
-            "timeout": "0",
-            "debug": "on",
-            "run": "Run Query",
+            "format": result_format,
+            "timeout": timeout,
+            "debug": debug,
+            "run": run,
         }
 
-        # URL-encode the parameters
-        encoded_params = urllib.parse.urlencode(params)
+        # Build and return the full URL.
+        url = base_url + "?" + urllib.parse.urlencode(params)
+        return url
 
-        # Construct the full URL
-        download_url = f"{self.base_url}?{encoded_params}"
-
-        return download_url
-
-    def get_year_list(self, year: int) -> list[dict]:
+    def get_year_list(
+        self, year: int, language_list: Optional[list[str]] = None
+    ) -> list[dict]:
         """
         Get the list of OJ entries for the specified year.
 
         Args:
             year (int): the year to search
+            language_list (list[str]): the list of languages
 
         Returns:
             list[dict]: the list of OJ entries
         """
-        # get the download buffer
-        list_buffer = self._get(self.get_sparql_list_url(year)).decode("utf-8")
+        if language_list is None:
+            language_list = EU_OJ_PRIMARY_LANG_LIST
 
-        # parse the csv using the dict reader
+        # store results across all langs
         results = []
-        list_reader = csv.DictReader(list_buffer.splitlines())
-        for row in list_reader:
-            if row.get("fmx4_to_download", None):
-                results.append(row)
+
+        # get the download buffer
+        for language in language_list:
+            list_buffer = self._get(
+                self.generate_sparql_query_url(year=year, language=language)
+            ).decode("utf-8")
+            # parse the csv using the dict reader
+            list_reader = csv.DictReader(list_buffer.splitlines())
+            for row in list_reader:
+                if row.get("fmx4_to_download", None):
+                    results.append(row)
 
         return results
 
@@ -220,8 +270,10 @@ class EUOJSource(BaseSource):
         # get the download URL
         try:
             # get the identifier
+
             identifier = entry["OJ"]
-            id_ = identifier.split("/")[-1]
+            lang = entry["lang"]
+            id_ = identifier.split("/").pop() + "/" + lang.split("/").pop()
 
             # check if it exists
             if self.check_id(id_):
@@ -307,7 +359,7 @@ class EUOJSource(BaseSource):
                 try:
                     # download the entry
                     download_status = self.download_entry(entry)
-                    if download_status == (
+                    if download_status in (
                         SourceDownloadStatus.SUCCESS,
                         SourceDownloadStatus.EXISTED,
                     ):
