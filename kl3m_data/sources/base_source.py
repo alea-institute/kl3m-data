@@ -173,6 +173,24 @@ class BaseSource(abc.ABC):
         """
         self.close()
 
+    def __getstate__(self) -> dict[str, Any]:
+        """
+        Return the state of the object for pickling.
+        """
+        state: dict[str, Any] = self.__dict__.copy()
+        for attr in ("client", "async_client", "s3_client"):
+            state.pop(attr, None)
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """
+        Restore the state of the object from pickling.
+        """
+        self.__dict__.update(state)
+        self.client = self._init_httpx_client()
+        self.async_client = self._init_httpx_async_client()
+        self.s3_client = get_s3_client()
+
     def _get_response(
         self,
         url: str,
