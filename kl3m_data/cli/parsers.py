@@ -75,6 +75,7 @@ def parse_serial(
     shard_prefix: Optional[str] = None,
     clobber: bool = False,
     prefix: Optional[str] = None,
+    suffix: Optional[str] = None,
     **kwargs: Any,
 ) -> None:
     """
@@ -85,6 +86,7 @@ def parse_serial(
         shard_prefix: Optional shard prefix to filter objects
         clobber: Whether to overwrite existing output keys
         prefix: Optional prefix to filter objects
+        suffix: Optional suffix to filter objects
         **kwargs: Additional keyword arguments passed to parse_object
     """
     # initialize S3 client
@@ -135,6 +137,10 @@ def parse_serial(
                 objects = iter_prefix(s3_client, "data.kl3m.ai", full_dataset_path)
 
             for object_key in objects:
+                # check suffix here
+                if suffix and not object_key.lower().endswith(suffix.lower()):
+                    continue
+
                 progress.update(task, advance=1)
                 progress.update(
                     task,
@@ -210,6 +216,7 @@ def build_dataset_index(dataset_id: str):
     # track all objects
     all_objects = []
     total = 0
+
     # for object_key in prog_bar:
     with Progress(*progress_columns) as progress:
         task = progress.add_task(
@@ -281,6 +288,10 @@ def main() -> None:
         "--key-prefix", help="Prefix to filter objects (for parse_serial)"
     )
     parser.add_argument(
+        "--key-suffix", help="Suffix to filter objects (for parse_serial)"
+    )
+
+    parser.add_argument(
         "--max-size", type=int, default=8, help="Maximum file size in MB to process"
     )
     parser.add_argument(
@@ -303,7 +314,12 @@ def main() -> None:
         parse_single(args.key, **kwargs)
     elif args.command == "parse_serial":
         parse_serial(
-            args.dataset_id, args.shard_prefix, args.clobber, args.key_prefix, **kwargs
+            args.dataset_id,
+            args.shard_prefix,
+            args.clobber,
+            args.key_prefix,
+            args.key_suffix,
+            **kwargs,
         )
     elif args.command == "build_index":
         if not args.dataset_id:
