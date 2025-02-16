@@ -340,6 +340,14 @@ def upload_form_type(
                         if document["representations"][mime_type][0] in (47842,):
                             continue
 
+                        # skip if this is a broken <PDF> mime type
+                        if document["representations"][mime_type][0:3] == [
+                            18,
+                            4128,
+                            39,
+                        ]:
+                            continue
+
                         yield {
                             "identifier": document["identifier"],
                             "dataset": "edgar",
