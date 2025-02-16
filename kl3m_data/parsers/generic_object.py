@@ -2,6 +2,8 @@
 Generic object parser.
 """
 
+import mimetypes
+
 # imports
 from typing import List, Optional
 
@@ -20,6 +22,7 @@ from kl3m_data.parsers.parser_types import (
     ParsedDocument,
     ParsedDocumentRepresentation,
 )
+from kl3m_data.utils.uu_utils import uudecode
 
 # packages
 
@@ -96,6 +99,31 @@ def parse_content(
     Returns:
         List[ParsedDocument]: Parsed documents.
     """
+    # check if the content is uuencoded here
+    if object_format == "application/uuencode":
+        # decode the content
+        try:
+            object_name, object_content = uudecode(object_content)
+            mime_type, _ = mimetypes.guess_type(object_name)
+            if mime_type:
+                object_format = mime_type
+        except Exception as e:
+            LOGGER.error("Failed to decode uuencoded content: %s", e)
+            return []
+
+    # check for begin ### next
+    if object_content.startswith(b"begin"):
+        # decode the content
+        try:
+            if object_content[6:9].decode().isnumeric():
+                object_name, object_content = uudecode(object_content)
+                mime_type, _ = mimetypes.guess_type(object_name)
+                if mime_type:
+                    object_format = mime_type
+        except Exception as e:
+            LOGGER.error("Failed to decode uuencoded content: %s", e)
+            return []
+
     # parse the document
     documents = []
     if object_format in ("application/zip",):
