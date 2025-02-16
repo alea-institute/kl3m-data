@@ -3,7 +3,7 @@ import argparse
 import hashlib
 import json
 import datetime
-from typing import Optional
+from typing import Optional, Generator
 
 # packages
 from datasets import Dataset
@@ -20,11 +20,13 @@ from rich.progress import (
 from kl3m_data.sources.us.edgar.edgar_source import EDGARSource
 from kl3m_data.logger import LOGGER
 from kl3m_data.parsers.parser import get_output_key, parse_object
+from kl3m_data.utils.parquet_utils import serialize_document, deserialize_document_bytes
 from kl3m_data.utils.s3_utils import (
     check_object_exists,
     get_s3_client,
     iter_prefix,
     put_object_bytes,
+    get_object_bytes,
 )
 
 
@@ -148,6 +150,218 @@ def parse_form_type(
                     bad += 1
 
 
+def convert_form_type(
+    form_type: str | list[str] | None = None,
+    clobber: bool = False,
+    cik: str | list[str] | None = None,
+    suffix: Optional[str] = None,
+    shard_prefix: Optional[str] = None,
+    max_size: int = 4,
+) -> None:
+    """
+    Convert the specified form type data to the parquet format.
+
+    Args:
+        form_type: Optional form type or list of form types to filter on
+        clobber: Whether to overwrite existing dataset
+        cik: Optional CIK or list of CIKs to filter on
+        suffix: Optional suffix for the output file
+        shard_prefix: Optional shard key for the output file
+        max_size: Maximum size of the file to parse in MB
+
+    Returns:
+        None
+    """
+    # initialize S3 client
+    s3_client = get_s3_client()
+
+    # create source
+    source = EDGARSource()
+
+    # setup progress tracking
+    progress_columns = [
+        SpinnerColumn(),
+        TextColumn("[bold blue]{task.description}"),
+        TextColumn("[progress.percentage]{task.completed}/{task.total}"),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        TextColumn("[bold]{task.fields[status]}"),
+    ]
+
+    # track counters
+    good, bad, new = 0, 0, 0
+
+    with Progress(*progress_columns) as progress:
+        task = progress.add_task(
+            "Processing documents...",
+            total=None,
+            status=f"good: {good} bad: {bad} new: {new}",
+        )
+
+        for filing in source.get_submissions(
+            form_type=form_type,
+            cik=cik,
+        ):
+            # get s3 path to test
+            accession_number = filing.get("accessionNumber")
+            cik_accession_path = accession_number.split("-")[0]
+            object_prefix = (
+                f"representations/edgar/{cik_accession_path}/{accession_number}/"
+            )
+
+            # check accession number blake2b hash prefix is shard_prefix is set
+            if shard_prefix:
+                accession_hash = hashlib.blake2b(
+                    accession_number.encode("utf-8"), digest_size=8
+                ).hexdigest()
+                if not accession_hash.startswith(shard_prefix):
+                    continue
+
+            # iter through this
+            for object_key in iter_prefix(s3_client, "data.kl3m.ai", object_prefix):
+                # check suffix
+                if suffix and not object_key.lower().endswith(suffix.lower()):
+                    continue
+
+                # update prog bar
+                progress.update(task, advance=1)
+                progress.update(
+                    task,
+                    description=f"Processing {object_key[0:40]:<40}...",
+                    status=f"good: {good} bad: {bad} new: {new}",
+                )
+
+                # get output key and check if it exists
+                try:
+                    parquet_key = object_key.replace(
+                        "representations/edgar/", "parquet/edgar/"
+                    )
+                    # check if already exists
+                    if not clobber:
+                        if check_object_exists(s3_client, "data.kl3m.ai", parquet_key):
+                            continue
+
+                    # get the representation
+                    representation_buffer = get_object_bytes(
+                        s3_client, "data.kl3m.ai", object_key
+                    )
+
+                    if len(representation_buffer) > max_size * 1024 * 1024:
+                        bad += 1
+                        continue
+
+                    # parse
+                    representation_data = json.loads(representation_buffer)
+                    documents = representation_data.get("documents", [])
+
+                    if len(documents) < 1:
+                        bad += 1
+                        continue
+
+                    # convert to parquet
+                    parquet_bytes = serialize_document(documents[0])
+                    if parquet_bytes is None:
+                        bad += 1
+                        continue
+
+                    # upload parquet file
+                    put_object_bytes(
+                        s3_client, "data.kl3m.ai", parquet_key, parquet_bytes
+                    )
+                    LOGGER.info(f"Converted {object_key} to {parquet_key}")
+                    good += 1
+                except Exception as e:
+                    LOGGER.error("Error processing object key=%s: %s", object_key, e)
+                    bad += 1
+
+
+def upload_form_type(
+    dataset_name: str,
+    form_type: str | list[str] | None = None,
+    cik: str | list[str] | None = None,
+    suffix: Optional[str] = None,
+    min_tokens: int = 512,
+    limit: Optional[int] = None,
+) -> None:
+    """
+    Upload the specified dataset to HuggingFace.
+
+    Args:
+        dataset_name: Name of the dataset to upload
+        form_type: Optional form type or list of form types to filter on
+        cik: Optional CIK or list of CIKs to filter on
+        suffix: Optional suffix for the output file
+        min_tokens: Minimum number of tokens to include
+        limit: Optional limit on the number of records to upload
+
+    Returns:
+        None
+    """
+
+    # track counters
+    def local_gen() -> Generator[dict, None, None]:
+        # get client inside
+        s3_client = get_s3_client()
+
+        # create source
+        source = EDGARSource()
+
+        good = 0
+        for filing in source.get_submissions(
+            form_type=form_type,
+            cik=cik,
+        ):
+            # get s3 path to test
+            accession_number = filing.get("accessionNumber")
+            cik_accession_path = accession_number.split("-")[0]
+            object_prefix = f"parquet/edgar/{cik_accession_path}/{accession_number}/"
+
+            # iter through this
+            for object_key in iter_prefix(s3_client, "data.kl3m.ai", object_prefix):
+                # check suffix
+                if suffix and not object_key.lower().endswith(suffix.lower()):
+                    print("Skipping {object_key}")
+                    continue
+
+                try:
+                    parquet_bytes = get_object_bytes(
+                        s3_client, "data.kl3m.ai", object_key
+                    )
+                    document = deserialize_document_bytes(parquet_bytes)
+
+                    # yield tokens for each mime type
+                    for mime_type in document.get("representations", {}):
+                        # check if we have enough tokens
+                        if len(document["representations"][mime_type]) <= min_tokens:
+                            continue
+
+                        # check if first token is 47842
+                        if document["representations"][mime_type][0] in (47842,):
+                            continue
+
+                        yield {
+                            "identifier": document["identifier"],
+                            "dataset": "edgar",
+                            "mime_type": mime_type,
+                            "tokens": document["representations"][mime_type],
+                        }
+                        good += 1
+
+                        if limit and good >= limit:
+                            return
+                except Exception as e:
+                    print(f"Error processing {object_key}: {e}")
+
+    # create dataset
+    dataset = Dataset.from_generator(
+        local_gen,
+    )
+
+    # push to hub
+    dataset.push_to_hub(dataset_name)
+
+
 def create_filing_index(
     form_type: str | list[str] | None = None,
     output_name: str = "kl3m-edgar-filings",
@@ -246,6 +460,40 @@ def main() -> None:
         "--clobber", action="store_true", help="Overwrite existing dataset"
     )
 
+    # parser for converting form type to parquet
+    convert_parser = subparsers.add_parser("convert-form-type")
+    convert_parser.add_argument(
+        "form_type", help="Form type(s) to filter on (comma-separated)"
+    )
+    convert_parser.add_argument("--cik", help="CIK(s) to filter on (comma-separated)")
+    convert_parser.add_argument("--suffix", help="Suffix to filter on")
+    convert_parser.add_argument("--shard-prefix", help="Shard prefix to filter on")
+    convert_parser.add_argument(
+        "--max-size",
+        type=int,
+        default=4,
+        help="Maximum size of the file to parse in MB",
+    )
+    convert_parser.add_argument(
+        "--clobber", action="store_true", help="Overwrite existing dataset"
+    )
+
+    # parser for uploading a form type to HuggingFace
+    upload_parser = subparsers.add_parser("upload-form-type")
+    upload_parser.add_argument("dataset_name", help="Dataset name")
+    upload_parser.add_argument(
+        "--form-type", help="Form type(s) to filter on (comma-separated)"
+    )
+    upload_parser.add_argument("--cik", help="CIK(s) to filter on (comma-separated)")
+    upload_parser.add_argument("--suffix", help="Suffix to filter on")
+    upload_parser.add_argument(
+        "--min-tokens",
+        type=int,
+        default=512,
+        help="Minimum number of tokens to include",
+    )
+    upload_parser.add_argument("--limit", type=int, help="Limit on number of records")
+
     # parse arguments
     args = parser.parse_args()
 
@@ -289,6 +537,35 @@ def main() -> None:
             cik=cik,
             shard_prefix=args.shard_prefix,
             max_size=args.max_size,
+        )
+    elif args.command == "convert-form-type":
+        form_type = (
+            [form.strip() for form in args.form_type.split(",")]
+            if args.form_type
+            else None
+        )
+        cik = [c.strip() for c in args.cik.split(",")] if args.cik else None
+        convert_form_type(
+            form_type=form_type,
+            clobber=args.clobber,
+            suffix=args.suffix,
+            cik=cik,
+            shard_prefix=args.shard_prefix,
+            max_size=args.max_size,
+        )
+    elif args.command == "upload-form-type":
+        form_type = (
+            [form.strip() for form in args.form_type.split(",")]
+            if args.form_type
+            else None
+        )
+        cik = [c.strip() for c in args.cik.split(",")] if args.cik else None
+        upload_form_type(
+            dataset_name=args.dataset_name,
+            form_type=form_type,
+            cik=cik,
+            suffix=args.suffix,
+            limit=args.limit,
         )
 
 
