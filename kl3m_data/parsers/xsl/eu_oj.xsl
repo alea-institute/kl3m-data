@@ -1,309 +1,140 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <xsl:stylesheet version="1.0"
-    xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
-    xmlns="http://www.w3.org/1999/xhtml"
-    xmlns:fmx="http://opoce"
-    exclude-result-prefixes="fmx">
+  xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
 
-  <xsl:output method="html" encoding="UTF-8" indent="yes" doctype-system="about:legacy-compat"/>
+  <!-- Output valid, indented HTML with UTF-8 encoding -->
+  <xsl:output method="html" encoding="UTF-8" indent="yes"/>
   <xsl:strip-space elements="*"/>
 
-  <!-- Root template -->
+  <!-- Root template: create full HTML page with head and body -->
   <xsl:template match="/">
-    <html lang="en">
+    <html>
       <head>
         <meta charset="UTF-8"/>
         <title>
-          <xsl:value-of select="//*[local-name()='TITLE'][1]//P[1]"/>
+          <!-- Use the first TITLE/P for the head title (text-only mode) -->
+          <xsl:apply-templates select="(//TITLE//P)[1]" mode="text"/>
         </title>
-        <style>
-          /* General Document Styles */
-          body {
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            line-height: 1.6;
-            margin: 2em;
-            color: #333;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 2em;
-          }
-
-          /* Document Header Styles */
-          .document-header {
-            margin-bottom: 2em;
-            border-bottom: 2px solid #0056b3;
-            padding-bottom: 1em;
-          }
-
-          .title-content {
-            margin-bottom: 1.5em;
-          }
-
-          .document-number {
-            font-size: 1.1em;
-            color: #0056b3;
-            margin-bottom: 1em;
-          }
-
-          .title-paragraph {
-            margin: 0.5em 0;
-            line-height: 1.4;
-            font-size: 1.1em;
-          }
-
-          .date-container {
-            color: #666;
-            font-style: italic;
-            margin: 0.5em 0;
-          }
-
-          .document-identifier {
-            font-weight: 500;
-            color: #333;
-            margin-bottom: 1em;
-          }
-
-          .document-metadata {
-            margin-bottom: 2em;
-            padding: 1em;
-            background-color: #f8f9fa;
-            border-left: 3px solid #0056b3;
-          }
-
-          /* Content Section Styles */
-          .content-section {
-            margin: 1.5em 0;
-            padding: 1em;
-          }
-
-          .content-title {
-            margin-bottom: 1em;
-          }
-
-          .content-subject {
-            display: flex;
-            gap: 0.5em;
-            margin-bottom: 0.5em;
-          }
-
-          .content-subject em {
-            color: #666;
-            min-width: 80px;
-          }
-
-          .subject-text {
-            font-weight: 500;
-          }
-
-          /* Numbered Paragraphs */
-          .numbered-paragraph {
-            display: flex;
-            gap: 1em;
-            margin: 1em 0;
-            align-items: flex-start;
-          }
-
-          .paragraph-number {
-            flex-shrink: 0;
-            min-width: 2em;
-            font-weight: 500;
-            color: #0056b3;
-          }
-
-          .paragraph-text {
-            flex: 1;
-            line-height: 1.6;
-          }
-
-          /* Lists */
-          .alpha-list {
-            list-style-type: lower-alpha;
-            margin: 1em 0 1em 3em;
-            padding-left: 1em;
-          }
-
-          .alpha-list li {
-            margin-bottom: 0.8em;
-            padding-left: 0.5em;
-          }
-
-          /* Notes and References */
-          .note {
-            margin: 1em 0;
-            padding: 1em;
-            background-color: #f8f9fa;
-            border-left: 3px solid #ffc107;
-          }
-
-          .document-reference {
-            font-style: italic;
-            color: #0056b3;
-          }
-
-          /* Tables */
-          table {
-            border-collapse: collapse;
-            width: 100%;
-            margin: 1em 0;
-          }
-
-          th, td {
-            border: 1px solid #ddd;
-            padding: 0.8em;
-            text-align: left;
-          }
-
-          th {
-            background-color: #f8f9fa;
-            font-weight: 500;
-          }
-        </style>
       </head>
       <body>
-        <xsl:apply-templates/>
+        <!-- Process TITLE section if available -->
+        <xsl:if test="//TITLE">
+          <div id="title">
+            <xsl:apply-templates select="(//TITLE)[1]"/>
+          </div>
+        </xsl:if>
+        <!-- Process CONTENTS section if available -->
+        <xsl:if test="//CONTENTS">
+          <div id="contents">
+            <xsl:apply-templates select="(//CONTENTS)[1]"/>
+          </div>
+        </xsl:if>
+        <!-- Otherwise, process the whole document -->
+        <xsl:if test="not(//TITLE) and not(//CONTENTS)">
+          <div id="content">
+            <xsl:apply-templates/>
+          </div>
+        </xsl:if>
       </body>
     </html>
   </xsl:template>
 
-  <!-- Document Structure Templates -->
-  <xsl:template match="GENERAL|DOC|CJT|PUBLICATION">
-    <div class="document">
-      <xsl:apply-templates/>
-    </div>
-  </xsl:template>
-
-  <!-- BIB.INSTANCE metadata -->
-  <xsl:template match="BIB.INSTANCE">
-    <div class="document-metadata">
-      <xsl:apply-templates select="DOCUMENT.REF"/>
-      <xsl:apply-templates select="NO.DOC"/>
-      <xsl:apply-templates select="*[not(self::DOCUMENT.REF|self::NO.DOC)]"/>
-    </div>
-  </xsl:template>
-
-  <!-- Title Section Templates -->
+  <!-- TITLE section: wrap in a container -->
   <xsl:template match="TITLE">
-    <header class="document-header">
+    <div class="title">
       <xsl:apply-templates/>
-    </header>
+    </div>
   </xsl:template>
 
+  <!-- Process the TI element: use the first P as an H1 (inline) and subsequent P as normal paragraphs -->
   <xsl:template match="TI">
-    <div class="title-content">
-      <xsl:apply-templates/>
-    </div>
-  </xsl:template>
-
-  <xsl:template match="NO.DOC.C">
-    <p class="document-number">
-      <xsl:value-of select="."/>
-    </p>
-  </xsl:template>
-
-  <xsl:template match="TI/P">
-    <p class="title-paragraph">
-      <xsl:apply-templates/>
-    </p>
-  </xsl:template>
-
-  <!-- Content Section Templates -->
-  <xsl:template match="CONTENTS">
-    <main class="document-contents">
-      <xsl:apply-templates/>
-    </main>
-  </xsl:template>
-
-  <xsl:template match="GR.SEQ">
-    <section class="content-section">
-      <xsl:apply-templates/>
-    </section>
-  </xsl:template>
-
-  <!-- Numbered Paragraphs -->
-  <xsl:template match="NP">
-    <div class="numbered-paragraph">
-      <xsl:if test="NO.P">
-        <span class="paragraph-number">
-          <xsl:value-of select="NO.P"/>
-        </span>
-      </xsl:if>
-      <div class="paragraph-text">
-        <xsl:apply-templates select="TXT|P|LIST"/>
-      </div>
-    </div>
-  </xsl:template>
-
-  <!-- Lists -->
-  <xsl:template match="LIST">
     <xsl:choose>
-      <xsl:when test="@TYPE='alpha'">
-        <ol class="alpha-list">
-          <xsl:apply-templates/>
-        </ol>
+      <xsl:when test="P">
+        <h1>
+          <xsl:apply-templates select="P[1]" mode="inline"/>
+        </h1>
+        <xsl:apply-templates select="P[position()>1]"/>
       </xsl:when>
       <xsl:otherwise>
-        <ul>
-          <xsl:apply-templates/>
-        </ul>
+        <xsl:apply-templates/>
       </xsl:otherwise>
     </xsl:choose>
   </xsl:template>
 
-  <xsl:template match="ITEM">
-    <li>
-      <xsl:apply-templates/>
-    </li>
+  <!-- Mode for extracting text-only for the head title -->
+  <xsl:template match="P" mode="text">
+    <xsl:value-of select="normalize-space(.)"/>
   </xsl:template>
 
-  <!-- Text and Paragraph Elements -->
-  <xsl:template match="TXT">
-    <xsl:apply-templates/>
-  </xsl:template>
-
+  <!-- Standard paragraph processing -->
   <xsl:template match="P">
     <p>
       <xsl:apply-templates/>
     </p>
   </xsl:template>
 
-  <!-- Date Handling -->
-  <xsl:template match="DATE">
-    <time datetime="{@ISO}">
-      <xsl:value-of select="."/>
-    </time>
+  <!-- Inline mode for P: output content without wrapping in <p> -->
+  <xsl:template match="P" mode="inline">
+    <xsl:apply-templates mode="inline"/>
   </xsl:template>
 
-  <!-- Notes and References -->
-  <xsl:template match="NOTE">
-    <span id="note-{@NOTE.ID}">
-      <xsl:apply-templates/>
-    </span>
+  <!-- NP element: render enumeration in a paragraph -->
+  <xsl:template match="NP">
+    <p>
+      <strong>
+        <xsl:apply-templates select="NO.P"/>
+      </strong>
+      <xsl:text>&#160;</xsl:text>
+      <xsl:apply-templates select="TXT"/>
+    </p>
   </xsl:template>
 
-  <xsl:template match="REF.DOC.OJ">
-    <span class="document-reference">
-      <xsl:value-of select="@COLL"/>
-      <xsl:text> </xsl:text>
-      <xsl:value-of select="@NO.OJ"/>
-      <xsl:text>, </xsl:text>
-      <xsl:value-of select="@DATE.PUB"/>
-      <xsl:if test="@PAGE.FIRST">
-        <xsl:text>, p. </xsl:text>
-        <xsl:value-of select="@PAGE.FIRST"/>
-      </xsl:if>
-    </span>
+  <!-- Inline mode for NP: output enumeration without wrapping -->
+  <xsl:template match="NP" mode="inline">
+    <strong>
+      <xsl:apply-templates select="NO.P" mode="inline"/>
+    </strong>
+    <xsl:text>&#160;</xsl:text>
+    <xsl:apply-templates select="TXT" mode="inline"/>
   </xsl:template>
 
-  <!-- Table Handling -->
+  <!-- TXT element: output its text content -->
+  <xsl:template match="TXT">
+    <xsl:value-of select="."/>
+  </xsl:template>
+
+  <!-- Inline mode for TXT -->
+  <xsl:template match="TXT" mode="inline">
+    <xsl:value-of select="."/>
+  </xsl:template>
+
+  <!-- Convert description lists to HTML unordered lists -->
+  <xsl:template match="DLIST">
+    <ul>
+      <xsl:apply-templates select="DLIST.ITEM"/>
+    </ul>
+  </xsl:template>
+
+  <xsl:template match="DLIST.ITEM">
+    <li>
+      <strong>
+        <xsl:apply-templates select="TERM"/>
+      </strong>
+      <xsl:text>:&#160;</xsl:text>
+      <xsl:apply-templates select="DEFINITION"/>
+    </li>
+  </xsl:template>
+
+  <!-- Convert TBL elements to tables -->
   <xsl:template match="TBL">
-    <table>
-      <xsl:apply-templates/>
+    <table border="1">
+      <xsl:apply-templates select="CORPUS/ROW"/>
     </table>
   </xsl:template>
 
   <xsl:template match="ROW">
     <tr>
-      <xsl:apply-templates/>
+      <xsl:apply-templates select="CELL"/>
     </tr>
   </xsl:template>
 
@@ -313,21 +144,106 @@
     </td>
   </xsl:template>
 
-  <!-- Special Character Handling -->
-  <xsl:template match="QUOT.START[@CODE='2018']">
-    <xsl:text>'</xsl:text>
+  <!-- GR.SEQ elements: group container -->
+  <xsl:template match="GR.SEQ">
+    <div class="group">
+      <xsl:apply-templates/>
+    </div>
   </xsl:template>
 
-  <xsl:template match="QUOT.END[@CODE='2019']">
-    <xsl:text>'</xsl:text>
+  <!-- Titles within GR.SEQ rendered as sub-headings using inline processing -->
+  <xsl:template match="GR.SEQ/TITLE">
+    <h2>
+      <xsl:apply-templates select="node()" mode="inline"/>
+    </h2>
   </xsl:template>
 
-  <xsl:template match="QUOT.START[@CODE='201C']">
-    <xsl:text>"</xsl:text>
+  <!-- HT elements: use em for italics and strong for uppercase -->
+  <xsl:template match="HT[@TYPE='ITALIC']">
+    <em>
+      <xsl:apply-templates/>
+    </em>
   </xsl:template>
 
-  <xsl:template match="QUOT.END[@CODE='201D']">
-    <xsl:text>"</xsl:text>
+  <xsl:template match="HT[@TYPE='UC']">
+    <strong>
+      <xsl:apply-templates/>
+    </strong>
+  </xsl:template>
+
+  <xsl:template match="HT">
+    <strong>
+      <xsl:apply-templates/>
+    </strong>
+  </xsl:template>
+
+  <!-- Inline mode for HT -->
+  <xsl:template match="HT" mode="inline">
+    <strong>
+      <xsl:apply-templates mode="inline"/>
+    </strong>
+  </xsl:template>
+
+  <!-- Render NOTE elements in emphasis and wrap in parentheses -->
+  <xsl:template match="NOTE">
+    <em>
+      <xsl:text>(</xsl:text>
+      <xsl:apply-templates/>
+      <xsl:text>)</xsl:text>
+    </em>
+  </xsl:template>
+
+  <!-- Inline mode for NOTE -->
+  <xsl:template match="NOTE" mode="inline">
+    <em>
+      <xsl:text>(</xsl:text>
+      <xsl:apply-templates mode="inline"/>
+      <xsl:text>)</xsl:text>
+    </em>
+  </xsl:template>
+
+  <!-- Render addresses using a div -->
+  <xsl:template match="ADDR.S">
+    <div class="address">
+      <xsl:apply-templates/>
+    </div>
+  </xsl:template>
+
+  <!-- DATE and FT: output their content -->
+  <xsl:template match="DATE | FT">
+    <xsl:apply-templates/>
+  </xsl:template>
+
+  <!-- Render NO.DOC.C as a paragraph -->
+  <xsl:template match="NO.DOC.C">
+    <p>
+      <xsl:apply-templates/>
+    </p>
+  </xsl:template>
+
+  <!-- Ignore QUOT.START and QUOT.END tags, output their content -->
+  <xsl:template match="QUOT.START | QUOT.END">
+    <xsl:apply-templates/>
+  </xsl:template>
+
+  <!-- Default catch-all: process children -->
+  <xsl:template match="*">
+    <xsl:apply-templates/>
+  </xsl:template>
+
+  <!-- Default inline mode catch-all: process children without wrapping -->
+  <xsl:template match="*" mode="inline">
+    <xsl:apply-templates mode="inline"/>
+  </xsl:template>
+
+  <!-- Process text nodes -->
+  <xsl:template match="text()">
+    <xsl:value-of select="."/>
+  </xsl:template>
+
+  <!-- Inline mode for text nodes -->
+  <xsl:template match="text()" mode="inline">
+    <xsl:value-of select="."/>
   </xsl:template>
 
 </xsl:stylesheet>
