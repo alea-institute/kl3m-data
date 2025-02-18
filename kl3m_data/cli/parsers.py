@@ -34,12 +34,13 @@ from kl3m_data.utils.s3_utils import (
 )
 
 
-def parse_single(object_key: str, **kwargs: Any) -> None:
+def parse_single(object_key: str, clobber: bool, **kwargs: Any) -> None:
     """
     Parse a single object by key.
 
     Args:
         object_key: The S3 object key to parse
+        clobber: Whether to overwrite existing output keys
         **kwargs: Additional keyword arguments passed to parse_object
     """
     # get the s3 client
@@ -47,9 +48,10 @@ def parse_single(object_key: str, **kwargs: Any) -> None:
 
     # get output key and check if it exists
     output_key = get_output_key(object_key)
-    if check_object_exists(s3_client, "data.kl3m.ai", output_key):
-        LOGGER.info("Output key already exists: %s", output_key)
-        return
+    if not clobber:
+        if check_object_exists(s3_client, "data.kl3m.ai", output_key):
+            LOGGER.info("Output key already exists: %s", output_key)
+            return
 
     try:
         parsed_docs = parse_object(s3_client, "data.kl3m.ai", object_key, **kwargs)
@@ -317,7 +319,7 @@ def main() -> None:
     if args.command == "parse_single":
         if not args.key:
             raise ValueError("--key is required for parse_single command")
-        parse_single(args.key, **kwargs)
+        parse_single(args.key, clobber=args.clobber, **kwargs)
     elif args.command == "parse_serial":
         parse_serial(
             args.dataset_id,
