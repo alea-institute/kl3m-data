@@ -122,7 +122,7 @@ class EUOJSource(BaseSource):
                     "min_year must be a valid year in the format YYYY"
                 ) from e
 
-        self.max_year = EU_OJ_MAX_YEAR
+        self.max_year = EU_OJ_MAX_YEAR + 1
         if "max_year" in kwargs:
             try:
                 self.max_year = datetime.datetime.strptime(
