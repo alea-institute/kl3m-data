@@ -3,6 +3,7 @@ Generic HTML parsing
 """
 
 # imports
+import html
 from typing import List, Optional
 
 # packages
@@ -48,6 +49,15 @@ def parse(
             tl_text = alea_preprocess.parsers.html.conversion.extract_buffer_markdown(
                 content.decode(), output_links=False, output_images=False
             )
+
+            # if it's empty, try again after wrapping with <html> tags
+            if tl_text is None or len(tl_text.strip()) == 0:
+                wrapped_content = f"<html>{content.decode()}</html>"
+                tl_text = (
+                    alea_preprocess.parsers.html.conversion.extract_buffer_markdown(
+                        wrapped_content, output_links=False, output_images=False
+                    )
+                )
         except Exception as e:
             LOGGER.error("Error extracting markdown via tl: %s", e)
             tl_text = ""
@@ -78,27 +88,26 @@ def parse(
         else:
             text = None
 
-        # if it's empty, try again after wrapping with <html> tags
-        if text is None or len(text.strip()) == 0:
-            wrapped_content = f"<html>{content.decode()}</html>"
-            text = alea_preprocess.parsers.html.conversion.extract_buffer_markdown(
-                wrapped_content, output_links=False, output_images=False
-            )
+        # if we have a text return, make sure it's unescaped
+        if text is not None and len(text.strip()) > 0:
+            text = html.unescape(text)
 
-        # create the parsed document
-        documents.append(
-            ParsedDocument(
-                source=source,
-                identifier=identifier,
-                representations={
-                    "text/markdown": ParsedDocumentRepresentation(
-                        content=text,
-                        mime_type="text/markdown",
-                    )
-                },
-                success=True,
+            # create the parsed document
+            documents.append(
+                ParsedDocument(
+                    source=source,
+                    identifier=identifier,
+                    representations={
+                        "text/markdown": ParsedDocumentRepresentation(
+                            content=text,
+                            mime_type="text/markdown",
+                        )
+                    },
+                    success=True,
+                )
             )
-        )
+        else:
+            LOGGER.warning("Unable to extract any text for %s", identifier)
     except Exception as e:  # pylint: disable=broad-except
         LOGGER.error("Error extracting markdown: %s", e)
 
