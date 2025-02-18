@@ -99,6 +99,13 @@ def parse_content(
     Returns:
         List[ParsedDocument]: Parsed documents.
     """
+    # strip initial <PDF> tag if present
+    if object_content.startswith(b"<PDF>"):
+        object_content = object_content[5:].lstrip()
+        # remove from end
+        if object_content.endswith(b"</PDF>"):
+            object_content = object_content[:-6].rstrip()
+
     # check if the content is uuencoded here
     if object_format == "application/uuencode":
         # decode the content
