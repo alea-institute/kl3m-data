@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <xsl:stylesheet version="1.0"
     xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
     xmlns="http://www.w3.org/1999/xhtml"
@@ -7,310 +8,326 @@
   <xsl:output method="html" encoding="UTF-8" indent="yes" doctype-system="about:legacy-compat"/>
   <xsl:strip-space elements="*"/>
 
-  <!-- Root template: Dispatch based on document type -->
+  <!-- Root template -->
   <xsl:template match="/">
     <html lang="en">
       <head>
         <meta charset="UTF-8"/>
-        <!-- Extract a plain text title from the first TITLE/P found -->
         <title>
           <xsl:value-of select="//*[local-name()='TITLE'][1]//P[1]"/>
         </title>
         <style>
           /* General Document Styles */
-          body { font-family: sans-serif; line-height: 1.6; margin: 2em; color: #333; }
-          h1, h2, h3, h4 { color: #0056b3; }
-          p { margin-bottom: 0.8em; }
-          ul, ol { margin-bottom: 1em; }
-          li { margin-bottom: 0.3em; }
-          table { border-collapse: collapse; width: 100%; margin-bottom: 1em; }
-          th, td { border: 1px solid #ccc; padding: 0.5em; text-align: left; }
-          th { background-color: #f0f0f0; font-weight: bold; }
-          time, em { font-style: italic; }
-          pre { background-color: #f0f0f0; padding: 1em; border: 1px solid #ccc; overflow-x: auto; }
-          code { font-family: monospace; background-color: #f0f0f0; padding: 0.2em; border: 1px solid #ddd; }
-          blockquote { margin: 1em 0; padding-left: 1em; border-left: 3px solid #0056b3; font-style: italic; color: #555; }
+          body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            margin: 2em;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2em;
+          }
 
-          /* Metadata and structural styles */
-          .metadata { border: 1px solid #ccc; padding: 1em; margin-bottom: 1em; background-color: #f9f9f9; }
-          .metadata h2 { font-size: 1.2em; margin-top: 0; }
-          .metadata ul { list-style: none; padding-left: 0; }
-          .metadata li { margin-bottom: 0.5em; }
-          .metadata strong { font-weight: bold; }
-          .doc, .general, .cjt, .publication { border: 1px solid #aaa; padding: 1em; margin-bottom: 1em; }
-          .doc h1, .general h1, .cjt h1, .publication h1 { font-size: 1.5em; margin-top: 0; }
-          .section-title { font-weight: bold; margin-top: 1em; margin-bottom: 0.5em; }
-          .subsection-title { font-style: italic; margin-top: 1em; margin-bottom: 0.5em; }
-          .doc-ref, .oj-ref { font-style: italic; }
+          /* Document Header Styles */
+          .document-header {
+            margin-bottom: 2em;
+            border-bottom: 2px solid #0056b3;
+            padding-bottom: 1em;
+          }
+
+          .title-content {
+            margin-bottom: 1.5em;
+          }
+
+          .document-number {
+            font-size: 1.1em;
+            color: #0056b3;
+            margin-bottom: 1em;
+          }
+
+          .title-paragraph {
+            margin: 0.5em 0;
+            line-height: 1.4;
+            font-size: 1.1em;
+          }
+
+          .date-container {
+            color: #666;
+            font-style: italic;
+            margin: 0.5em 0;
+          }
+
+          .document-identifier {
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 1em;
+          }
+
+          .document-metadata {
+            margin-bottom: 2em;
+            padding: 1em;
+            background-color: #f8f9fa;
+            border-left: 3px solid #0056b3;
+          }
+
+          /* Content Section Styles */
+          .content-section {
+            margin: 1.5em 0;
+            padding: 1em;
+          }
+
+          .content-title {
+            margin-bottom: 1em;
+          }
+
+          .content-subject {
+            display: flex;
+            gap: 0.5em;
+            margin-bottom: 0.5em;
+          }
+
+          .content-subject em {
+            color: #666;
+            min-width: 80px;
+          }
+
+          .subject-text {
+            font-weight: 500;
+          }
+
+          /* Numbered Paragraphs */
+          .numbered-paragraph {
+            display: flex;
+            gap: 1em;
+            margin: 1em 0;
+            align-items: flex-start;
+          }
+
+          .paragraph-number {
+            flex-shrink: 0;
+            min-width: 2em;
+            font-weight: 500;
+            color: #0056b3;
+          }
+
+          .paragraph-text {
+            flex: 1;
+            line-height: 1.6;
+          }
+
+          /* Lists */
+          .alpha-list {
+            list-style-type: lower-alpha;
+            margin: 1em 0 1em 3em;
+            padding-left: 1em;
+          }
+
+          .alpha-list li {
+            margin-bottom: 0.8em;
+            padding-left: 0.5em;
+          }
+
+          /* Notes and References */
+          .note {
+            margin: 1em 0;
+            padding: 1em;
+            background-color: #f8f9fa;
+            border-left: 3px solid #ffc107;
+          }
+
+          .document-reference {
+            font-style: italic;
+            color: #0056b3;
+          }
+
+          /* Tables */
+          table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1em 0;
+          }
+
+          th, td {
+            border: 1px solid #ddd;
+            padding: 0.8em;
+            text-align: left;
+          }
+
+          th {
+            background-color: #f8f9fa;
+            font-weight: 500;
+          }
         </style>
       </head>
       <body>
-        <xsl:choose>
-          <xsl:when test="DOC">
-            <xsl:apply-templates select="DOC"/>
-          </xsl:when>
-          <xsl:when test="GENERAL">
-            <xsl:apply-templates select="GENERAL"/>
-          </xsl:when>
-          <xsl:when test="CJT">
-            <xsl:apply-templates select="CJT"/>
-          </xsl:when>
-          <xsl:when test="PUBLICATION">
-            <xsl:apply-templates select="PUBLICATION"/>
-          </xsl:when>
-          <xsl:otherwise>
-            <p>Unknown document type.</p>
-          </xsl:otherwise>
-        </xsl:choose>
+        <xsl:apply-templates/>
       </body>
     </html>
   </xsl:template>
 
-  <!-- Templates for Document Roots -->
-  <xsl:template match="DOC">
-    <div class="doc">
+  <!-- Document Structure Templates -->
+  <xsl:template match="GENERAL|DOC|CJT|PUBLICATION">
+    <div class="document">
       <xsl:apply-templates/>
     </div>
   </xsl:template>
 
-  <xsl:template match="GENERAL">
-    <div class="general">
+  <!-- BIB.INSTANCE metadata -->
+  <xsl:template match="BIB.INSTANCE">
+    <div class="document-metadata">
+      <xsl:apply-templates select="DOCUMENT.REF"/>
+      <xsl:apply-templates select="NO.DOC"/>
+      <xsl:apply-templates select="*[not(self::DOCUMENT.REF|self::NO.DOC)]"/>
+    </div>
+  </xsl:template>
+
+  <!-- Title Section Templates -->
+  <xsl:template match="TITLE">
+    <header class="document-header">
+      <xsl:apply-templates/>
+    </header>
+  </xsl:template>
+
+  <xsl:template match="TI">
+    <div class="title-content">
       <xsl:apply-templates/>
     </div>
   </xsl:template>
 
-  <xsl:template match="CJT">
-    <div class="cjt">
+  <xsl:template match="NO.DOC.C">
+    <p class="document-number">
+      <xsl:value-of select="."/>
+    </p>
+  </xsl:template>
+
+  <xsl:template match="TI/P">
+    <p class="title-paragraph">
       <xsl:apply-templates/>
-    </div>
+    </p>
   </xsl:template>
 
-  <xsl:template match="PUBLICATION">
-    <div class="publication">
+  <!-- Content Section Templates -->
+  <xsl:template match="CONTENTS">
+    <main class="document-contents">
       <xsl:apply-templates/>
+    </main>
+  </xsl:template>
+
+  <xsl:template match="GR.SEQ">
+    <section class="content-section">
+      <xsl:apply-templates/>
+    </section>
+  </xsl:template>
+
+  <!-- Numbered Paragraphs -->
+  <xsl:template match="NP">
+    <div class="numbered-paragraph">
+      <xsl:if test="NO.P">
+        <span class="paragraph-number">
+          <xsl:value-of select="NO.P"/>
+        </span>
+      </xsl:if>
+      <div class="paragraph-text">
+        <xsl:apply-templates select="TXT|P|LIST"/>
+      </div>
     </div>
   </xsl:template>
 
-  <!-- Metadata Templates using mode "metadata" -->
-  <xsl:template name="metadata-section">
-    <div class="metadata">
-      <h2><xsl:value-of select="name()"/></h2>
-      <ul>
-        <xsl:apply-templates select="*" mode="metadata"/>
-      </ul>
-    </div>
+  <!-- Lists -->
+  <xsl:template match="LIST">
+    <xsl:choose>
+      <xsl:when test="@TYPE='alpha'">
+        <ol class="alpha-list">
+          <xsl:apply-templates/>
+        </ol>
+      </xsl:when>
+      <xsl:otherwise>
+        <ul>
+          <xsl:apply-templates/>
+        </ul>
+      </xsl:otherwise>
+    </xsl:choose>
   </xsl:template>
 
-  <xsl:template match="BIB.INSTANCE | BIB.DOC | PUBLICATION.REF | BIB.OJ | FMX | PAPER | PDF" mode="common-metadata">
-    <xsl:call-template name="metadata-section"/>
-  </xsl:template>
-
-  <xsl:template match="*" mode="metadata">
+  <xsl:template match="ITEM">
     <li>
-      <strong><xsl:value-of select="name()"/>:</strong>
-      <xsl:choose>
-        <xsl:when test="*">
-          <ul>
-            <xsl:apply-templates mode="metadata"/>
-          </ul>
-        </xsl:when>
-        <xsl:otherwise>
-          <xsl:value-of select="."/>
-        </xsl:otherwise>
-      </xsl:choose>
+      <xsl:apply-templates/>
     </li>
   </xsl:template>
 
-  <!-- TITLE Templates -->
-  <xsl:template match="DOC/PAPER/VOLUME.PAPER/ITEM.VOLUME/TITLE">
-    <xsl:apply-templates select="TI/P"/>
-  </xsl:template>
-  <xsl:template match="DOC/PDF/ITEM.VOLUME/TITLE"/>
-  <xsl:template match="DOC/PAPER/VOLUME.PAPER/ITEM.VOLUME/TITLE[@ID.TITLE='T0001']/TI/P">
-    <h2><xsl:value-of select="."/></h2>
-  </xsl:template>
-  <xsl:template match="GENERAL/TITLE">
-    <h1><xsl:apply-templates select="TI/P"/></h1>
-  </xsl:template>
-  <xsl:template match="CJT/TI.CJT/TITLE">
-    <h1><xsl:apply-templates select="TI/*"/></h1>
-  </xsl:template>
-  <xsl:template match="PUBLICATION/OJ/VOLUME/SECTION/TITLE">
-    <h2><xsl:apply-templates select="TI/NP/TXT"/></h2>
-  </xsl:template>
-  <xsl:template match="PUBLICATION/OJ/VOLUME/SECTION/SUBSECTION/TITLE">
-    <h3><xsl:apply-templates select="TI/P"/></h3>
-  </xsl:template>
-  <xsl:template match="PUBLICATION/OJ/VOLUME/SECTION/SUBSECTION/SUBSECTION/TITLE">
-    <h4><xsl:apply-templates select="TI/P"/></h4>
-  </xsl:template>
-  <xsl:template match="CJT/TI.CJT/TITLE/TI/P">
-    <h1><xsl:value-of select="."/></h1>
+  <!-- Text and Paragraph Elements -->
+  <xsl:template match="TXT">
+    <xsl:apply-templates/>
   </xsl:template>
 
-  <!-- CONTENTS Templates -->
-  <xsl:template match="GENERAL/CONTENTS">
-    <section class="contents">
-      <h2 class="section-title">Contents</h2>
-      <xsl:apply-templates/>
-    </section>
-  </xsl:template>
-  <xsl:template match="CJT/TI.CJT/CONTENTS">
-    <section class="contents">
-      <h2 class="section-title">Contents</h2>
-      <xsl:apply-templates/>
-    </section>
-  </xsl:template>
-
-  <!-- ENACTING.TERMS.CJT Template -->
-  <xsl:template match="CJT/ENACTING.TERMS.CJT">
-    <section class="enacting-terms-cjt">
-      <h2 class="section-title">Enacting Terms</h2>
-      <xsl:apply-templates/>
-    </section>
-  </xsl:template>
-
-
-  <!-- INDEX Template -->
-  <xsl:template match="CJT/TI.CJT/INDEX">
-    <section class="index">
-      <h2 class="section-title">Index</h2>
-      <ul>
-        <xsl:apply-templates/>
-      </ul>
-    </section>
-  </xsl:template>
-  <xsl:template match="CJT/TI.CJT/INDEX/KEYWORD">
-    <li><xsl:value-of select="."/></li>
-  </xsl:template>
-
-  <!-- LG.PROC and TRANS.REF Templates -->
-  <xsl:template match="CJT/TI.CJT/LG.PROC">
-    <p><xsl:value-of select="."/></p>
-  </xsl:template>
-  <xsl:template match="CJT/TI.CJT/TRANS.REF">
-    <p><strong>Translation Reference:</strong> <xsl:value-of select="."/></p>
-  </xsl:template>
-
-  <!-- GR.SEQ Template -->
-  <xsl:template match="GR.SEQ">
-    <section class="gr-seq">
-      <h3 class="subsection-title">
-        <xsl:apply-templates select="TITLE/TI/P"/>
-      </h3>
-      <xsl:apply-templates select="P|LIST|TBL"/>
-    </section>
-  </xsl:template>
-
-  <!-- Table Templates -->
-  <xsl:template match="TBL">
-    <table>
-      <xsl:apply-templates/>
-    </table>
-  </xsl:template>
-  <xsl:template match="ROW">
-    <tr>
-      <xsl:apply-templates/>
-    </tr>
-  </xsl:template>
-  <xsl:template match="CELL">
-    <td>
-      <xsl:apply-templates/>
-    </td>
-  </xsl:template>
-
-  <!-- ITEM.VOLUME Templates -->
-  <xsl:template match="PAPER/VOLUME.PAPER/ITEM.VOLUME">
-    <section class="item-volume">
-      <xsl:apply-templates select="TITLE"/>
-      <p>Item Ref: <xsl:value-of select="ITEM.REF"/></p>
-    </section>
-  </xsl:template>
-  <xsl:template match="PDF/ITEM.VOLUME">
-    <section class="item-volume">
-      <p>Item Ref (PDF): <xsl:value-of select="ITEM.REF/@REF.PDF"/></p>
-      <p>Page: <xsl:value-of select="ITEM.REF"/></p>
-    </section>
-  </xsl:template>
-
-  <!-- ITEM.PUB Templates in PUBLICATION -->
-  <xsl:template match="PUBLICATION/OJ/VOLUME/SECTION/SUBSECTION/ITEM.PUB">
-    <div class="item-pub">
-      <xsl:apply-templates/>
-    </div>
-  </xsl:template>
-
-  <!-- QUOTATION Handling -->
-  <xsl:template match="QUOT.START[@CODE='2018']">
-    <xsl:text>“</xsl:text>
-  </xsl:template>
-  <xsl:template match="QUOT.END[@CODE='2019']">
-    <xsl:text>”</xsl:text>
-  </xsl:template>
-  <xsl:template match="QUOT.START[@CODE='201C']">
-    <xsl:text>‘</xsl:text>
-  </xsl:template>
-  <xsl:template match="QUOT.END[@CODE='201D']">
-    <xsl:text>’</xsl:text>
-  </xsl:template>
-
-  <!-- Generic P Template -->
   <xsl:template match="P">
     <p>
       <xsl:apply-templates/>
     </p>
   </xsl:template>
 
-  <!-- Generic TXT Template -->
-  <xsl:template match="TXT">
-    <xsl:apply-templates/>
+  <!-- Date Handling -->
+  <xsl:template match="DATE">
+    <time datetime="{@ISO}">
+      <xsl:value-of select="."/>
+    </time>
   </xsl:template>
 
-  <!-- Specific P Template inside TI -->
-  <xsl:template match="TI/P">
-    <p>
+  <!-- Notes and References -->
+  <xsl:template match="NOTE">
+    <span id="note-{@NOTE.ID}">
       <xsl:apply-templates/>
-    </p>
+    </span>
   </xsl:template>
 
-  <!-- NO.DOC.C and NO.DOC.OJ Templates -->
-  <xsl:template match="NO.DOC.C">
-    <p class="doc-ref">Case No: <xsl:value-of select="."/></p>
-  </xsl:template>
-  <xsl:template match="NO.DOC.OJ">
-    <p class="oj-ref">OJ No: <xsl:value-of select="TXT"/></p>
-  </xsl:template>
-
-  <!-- REF.DOC.OJ Template -->
   <xsl:template match="REF.DOC.OJ">
-    <xsl:variable name="oj_ref">
-      <xsl:text>OJ </xsl:text>
+    <span class="document-reference">
       <xsl:value-of select="@COLL"/>
       <xsl:text> </xsl:text>
       <xsl:value-of select="@NO.OJ"/>
-      <xsl:text> of </xsl:text>
+      <xsl:text>, </xsl:text>
       <xsl:value-of select="@DATE.PUB"/>
-    </xsl:variable>
-    <cite>
-      <xsl:value-of select="$oj_ref"/>
-    </cite>
+      <xsl:if test="@PAGE.FIRST">
+        <xsl:text>, p. </xsl:text>
+        <xsl:value-of select="@PAGE.FIRST"/>
+      </xsl:if>
+    </span>
   </xsl:template>
 
-  <!-- NP/TXT Template -->
-  <xsl:template match="NP/TXT">
-    <p>
-      <xsl:value-of select="../NO.P"/>
-      <xsl:text> </xsl:text>
+  <!-- Table Handling -->
+  <xsl:template match="TBL">
+    <table>
       <xsl:apply-templates/>
-    </p>
+    </table>
   </xsl:template>
 
-  <!-- Handle IE elements (empty) -->
-  <xsl:template match="IE"/>
+  <xsl:template match="ROW">
+    <tr>
+      <xsl:apply-templates/>
+    </tr>
+  </xsl:template>
 
-  <!-- Handle FT elements -->
-  <xsl:template match="FT">
-    <xsl:value-of select="."/>
+  <xsl:template match="CELL">
+    <td>
+      <xsl:apply-templates/>
+    </td>
+  </xsl:template>
+
+  <!-- Special Character Handling -->
+  <xsl:template match="QUOT.START[@CODE='2018']">
+    <xsl:text>'</xsl:text>
+  </xsl:template>
+
+  <xsl:template match="QUOT.END[@CODE='2019']">
+    <xsl:text>'</xsl:text>
+  </xsl:template>
+
+  <xsl:template match="QUOT.START[@CODE='201C']">
+    <xsl:text>"</xsl:text>
+  </xsl:template>
+
+  <xsl:template match="QUOT.END[@CODE='201D']">
+    <xsl:text>"</xsl:text>
   </xsl:template>
 
 </xsl:stylesheet>
