@@ -107,12 +107,10 @@ def convert_dataset(
             ]
 
             # check if already exists
-            if (
-                check_object_exists(s3_client, "data.kl3m.ai", parquet_key)
-                and not clobber
-            ):
-                skipped += 1
-                continue
+            if not clobber:
+                if check_object_exists(s3_client, "data.kl3m.ai", parquet_key):
+                    skipped += 1
+                    continue
 
             # get representation data
             try:
