@@ -21,6 +21,7 @@ from kl3m_data.sources.eu.eu_oj.eu_oj import EUOJSource
 from kl3m_data.sources.uk.uk_legislation.uk_legislation_source import (
     UKLegislationSource,
 )
+from kl3m_data.sources.us.cap.cap_source import CAPDocSource
 from kl3m_data.sources.us.dockets.dockets_source import DocketsSource
 from kl3m_data.sources.us.dotgov.dotgov_source import DotGovDocSource
 from kl3m_data.sources.us.ecfr.ecfr_source import ECFRSource
@@ -46,6 +47,8 @@ def get_source(source_id: str, **kwargs) -> BaseSource:
     Returns:
         BaseSource: The source object.
     """
+    if source_id in ("cap",):
+        return CAPDocSource(**kwargs)
     if source_id in ("fdlp", "us/fdlp"):
         return FDLPSource(**kwargs)
     if source_id in ("govinfo", "us/govinfo"):
