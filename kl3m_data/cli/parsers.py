@@ -4,8 +4,10 @@ CLI for the KL3M Data parsing functionality.
 
 # imports
 import argparse
+import base64
 import gzip
 import json
+import zlib
 from typing import Any, Optional
 
 # packages
@@ -28,6 +30,7 @@ from kl3m_data.utils.s3_utils import (
     iter_prefix_shard,
     put_object_bytes,
     list_common_prefixes,
+    get_object_bytes,
 )
 
 
@@ -278,10 +281,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="kl3m data parser CLI")
     parser.add_argument(
         "command",
-        choices=["parse_single", "parse_serial", "build_index", "build_all_indexes"],
+        choices=[
+            "parse_single",
+            "parse_serial",
+            "build_index",
+            "build_all_indexes",
+            "show",
+        ],
         help="Command to execute",
     )
-    parser.add_argument("--key", help="Object key to parse (for parse_single)")
+    parser.add_argument("--key", help="Object key to parse (for parse_single, show)")
     parser.add_argument("--dataset-id", help="Dataset ID to process")
     parser.add_argument("--shard-prefix", help="Shard prefix to process")
     parser.add_argument(
@@ -327,6 +336,41 @@ def main() -> None:
         build_dataset_index(args.dataset_id)
     elif args.command == "build_all_indexes":
         build_all_dataset_index()
+    elif args.command == "show":
+        if not args.key:
+            raise ValueError("--key is required for show command")
+
+        # get the s3 client
+        s3_client = get_s3_client()
+
+        # get the object
+        object_bytes = get_object_bytes(s3_client, "data.kl3m.ai", args.key)
+
+        # print the object metadata excluding tokens and representations
+        object_data = json.loads(object_bytes.decode("utf-8"))
+
+        for document_number, document in enumerate(object_data.get("documents", [])):
+            print("=" * 40)
+            print(f"Document {document_number + 1}:")
+            print("=" * 40)
+
+            for key, value in document.items():
+                if key not in ["tokens", "representations"]:
+                    print(f" - {key}: {value}")
+
+            # now print all representations with nice separation
+            print("\nRepresentations:")
+            for mime_type, representation in document.get(
+                "representations", {}
+            ).items():
+                print("~" * 40)
+                print(f"{mime_type}:")
+                print("~" * 40)
+                print(
+                    zlib.decompress(
+                        base64.b64decode(representation["content"])
+                    ).decode()
+                )  # type: ignore
 
 
 if __name__ == "__main__":
