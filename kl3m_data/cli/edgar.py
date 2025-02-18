@@ -112,14 +112,11 @@ def parse_form_type(
 
                 # get output key and check if it exists
                 output_key = get_output_key(object_key)
-                if check_object_exists(s3_client, "data.kl3m.ai", output_key):
-                    if not clobber:
+                if not clobber:
+                    if check_object_exists(s3_client, "data.kl3m.ai", output_key):
                         LOGGER.info("Output key already exists: %s", output_key)
                         good += 1
                         continue
-                    else:
-                        LOGGER.info("Clobbering existing output key: %s", output_key)
-                        new += 1
 
                 try:
                     parsed_docs = parse_object(
