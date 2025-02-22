@@ -72,6 +72,8 @@ class PMLMTask(BaseTask):
         """
         # get lengths
         sample_length = len(tokens)
+        if sample_length < 2:
+            return
         min_mask = int(max(0.1 * sample_length, 1.0))
         max_mask = int(max(0.2 * sample_length, 2.0))
         num_mask = numpy.random.randint(min_mask, max_mask)

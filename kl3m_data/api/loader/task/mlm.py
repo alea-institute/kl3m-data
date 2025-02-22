@@ -63,6 +63,8 @@ class MLMTask(BaseTask):
         """
         #  get constants
         sample_length = len(tokens)
+        if sample_length < 2:
+            return
         min_mask = int(max(0.1 * sample_length, 1.0))
         max_mask = int(max(0.2 * sample_length, 2.0))
 
