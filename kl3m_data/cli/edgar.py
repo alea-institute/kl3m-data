@@ -1,12 +1,14 @@
 # imports
 import argparse
 import hashlib
+import html
 import json
 import datetime
 from typing import Optional, Generator
 
 # packages
 from datasets import Dataset
+from tokenizers import Tokenizer
 from rich.progress import (
     Progress,
     TextColumn,
@@ -28,6 +30,8 @@ from kl3m_data.utils.s3_utils import (
     put_object_bytes,
     get_object_bytes,
 )
+
+OUTPUT_TOKENIZER = Tokenizer.from_pretrained("alea-institute/kl3m-004-128k-cased")
 
 
 def parse_form_type(
@@ -278,7 +282,7 @@ def upload_form_type(
     form_type: str | list[str] | None = None,
     cik: str | list[str] | None = None,
     suffix: Optional[str] = None,
-    min_tokens: int = 512,
+    min_tokens: int = 128,
     limit: Optional[int] = None,
 ) -> None:
     """
@@ -331,10 +335,18 @@ def upload_form_type(
                     for mime_type in document.get("representations", {}):
                         # check if we have enough tokens
                         if len(document["representations"][mime_type]) <= min_tokens:
+                            # log it
+                            LOGGER.info(
+                                f"Skipping {object_key} with {len(document['representations'][mime_type])} tokens"
+                            )
                             continue
 
                         # check if first token is 47842
                         if document["representations"][mime_type][0] in (47842,):
+                            # log it
+                            LOGGER.info(
+                                f"Skipping {object_key} with first token {document['representations'][mime_type][0]}"
+                            )
                             continue
 
                         # skip if this is a broken <PDF> mime type
@@ -343,13 +355,26 @@ def upload_form_type(
                             4128,
                             39,
                         ]:
+                            # log it
+                            LOGGER.info(
+                                f"Skipping {object_key} with broken <PDF> mime type"
+                            )
                             continue
+
+                        # clean up the content
+                        if 1188 in document["representations"][mime_type]:
+                            # html.unescape it and re-tokenize
+                            escaped_content = OUTPUT_TOKENIZER.decode(document["representations"][mime_type])
+                            unescaped_content = html.unescape(escaped_content)
+                            output_tokens = OUTPUT_TOKENIZER.encode(unescaped_content).ids
+                        else:
+                            output_tokens = document["representations"][mime_type]
 
                         yield {
                             "identifier": document["identifier"],
                             "dataset": "edgar",
                             "mime_type": mime_type,
-                            "tokens": document["representations"][mime_type],
+                            "tokens": output_tokens,
                         }
                         good += 1
 
