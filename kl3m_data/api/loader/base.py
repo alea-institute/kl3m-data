@@ -49,6 +49,7 @@ DEFAULT_MIME_TYPES = [
 ]
 
 DEFAULT_MIN_QUEUE_SIZE = 10000
+DEFAULT_SLEEP = 10
 
 
 class BaseLoader(ABC):
@@ -194,7 +195,7 @@ class BaseLoader(ABC):
         new_items = {task_type.value: 0 for task_type in self.task_handlers.keys()}
 
         # full state
-        all_full = True
+        any_full = False
 
         # iterate over all queues
         for queue_key in self.queue.keys():
@@ -204,10 +205,7 @@ class BaseLoader(ABC):
             # get redis queue size
             redis_queue_size = self.get_task_queue_length(task_type, source)
             if redis_queue_size >= self.min_queue_size[task_type]:
-                continue
-
-            # set full to false
-            all_full = False
+                any_full = True
 
             # randomly choose a side to pop from
             side_left = random.choice([True, False])
@@ -264,11 +262,9 @@ class BaseLoader(ABC):
         self.logger.info(
             "Pushed samples to Redis: %s", json.dumps(new_items, default=str)
         )
-
-        # if it was zero, then all queues were full, and we should slow down
-        if all_full:
-            self.logger.info("All queues full, sleeping 1 second...")
-            time.sleep(1)
+        if any_full:
+            self.logger.info("Some queues full, sleeping 1 second...")
+            time.sleep(DEFAULT_SLEEP // 2)
 
     def convert_tokenizer(self, input_tokens: list[int]) -> list[int]:
         """
