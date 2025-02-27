@@ -108,17 +108,20 @@ def convert_dataset(
 
             # check if already exists
             if not clobber:
+                print(f"Checking {parquet_key}")
                 if check_object_exists(s3_client, "data.kl3m.ai", parquet_key):
                     skipped += 1
                     continue
 
             # get representation data
             try:
+                print("Getting representation data", object_key)
                 representation_buffer = get_object_bytes(
                     s3_client, "data.kl3m.ai", object_key
                 )
 
                 if len(representation_buffer) > max_size:
+                    print(f"Skipping {object_key} due to size")
                     skipped += 1
                     continue
 
@@ -244,7 +247,7 @@ def main() -> None:
     convert_parser.add_argument(
         "--max-size",
         type=int,
-        default=4 * 1024 * 1024,
+        default=8,
         help="Max file size in bytes to convert",
     )
     convert_parser.add_argument(
@@ -295,7 +298,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "convert":
-        convert_dataset(args.dataset, args.max_size, args.clobber, args.shard_prefix)
+        convert_dataset(args.dataset, args.max_size * 1024 * 1024, args.clobber, args.shard_prefix)
 
     elif args.command == "upload":
         # Validate filters
