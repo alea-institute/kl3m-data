@@ -6,6 +6,7 @@ FastAPI application for serving MLM training data using AsyncCacheLoader and Dir
 import asyncio
 import json
 import random
+import zlib
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List
 
@@ -169,7 +170,9 @@ async def get_samples_uniform(
 
             if records is not None:
                 unique_datasets.add(queue.decode())
-                samples.extend([json.loads(record) for record in records])
+                samples.extend(
+                    [json.loads(zlib.decompress(record)) for record in records]
+                )
                 remaining -= len(records)
 
             if remaining <= 0:

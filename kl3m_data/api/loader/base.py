@@ -7,6 +7,7 @@ import json
 import random
 import time
 import traceback
+import zlib
 from abc import ABC, abstractmethod
 from collections import deque
 from logging import Logger
@@ -236,21 +237,27 @@ class BaseLoader(ABC):
                 sum_labels = sum(1 for label in sample["labels"] if label >= 0)
 
                 if (
-                    sum_attention_mask < 0.1 * self.sequence_length
-                    or sum_labels < 0.1 * self.sequence_length
+                    sum_attention_mask < 0.01 * self.sequence_length
+                    or sum_labels < 0.01 * self.sequence_length
                 ):
+                    # log it
+                    self.logger.info(
+                        "Skipping sample with too few tokens: %s < 0.05 * %d",
+                        sample["identifier"],
+                        self.sequence_length,
+                    )
                     continue
 
                 # push to redis
                 if side_left:
                     self.valkey_client.lpush(
                         f"kl3m:samples:{task_type}:{source}",
-                        json.dumps(sample, default=str),
+                        zlib.compress(json.dumps(sample, default=str).encode("utf-8")),
                     )
                 else:
                     self.valkey_client.rpush(
                         f"kl3m:samples:{task_type}:{source}",
-                        json.dumps(sample, default=str),
+                        zlib.compress(json.dumps(sample, default=str).encode("utf-8")),
                     )
 
                 self.pushed += 1
