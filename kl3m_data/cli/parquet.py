@@ -35,7 +35,7 @@ from kl3m_data.utils.s3_utils import (
     put_object_bytes,
     check_object_exists,
     get_object_bytes,
-    iter_prefix_shard,
+    iter_prefix_shard, list_common_prefixes,
 )
 from kl3m_data.logger import LOGGER
 
@@ -58,9 +58,14 @@ def convert_dataset(
     Returns:
         None
     """
-    # setup paths
-    representation_path = f"representations/{dataset_id}/"
-    parquet_path = f"parquet/{dataset_id}/"
+    if dataset_id == "all":
+        representation_path = "representations/"
+        parquet_path = "parquet/"
+        dataset_id = "all"
+    else:
+        # setup paths
+        representation_path = f"representations/{dataset_id}/"
+        parquet_path = f"parquet/{dataset_id}/"
 
     # get s3 client
     s3_client = get_s3_client()
@@ -108,20 +113,17 @@ def convert_dataset(
 
             # check if already exists
             if not clobber:
-                print(f"Checking {parquet_key}")
                 if check_object_exists(s3_client, "data.kl3m.ai", parquet_key):
                     skipped += 1
                     continue
 
             # get representation data
             try:
-                print("Getting representation data", object_key)
                 representation_buffer = get_object_bytes(
                     s3_client, "data.kl3m.ai", object_key
                 )
 
                 if len(representation_buffer) > max_size:
-                    print(f"Skipping {object_key} due to size")
                     skipped += 1
                     continue
 
