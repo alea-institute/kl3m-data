@@ -35,7 +35,7 @@ from kl3m_data.utils.s3_utils import (
     put_object_bytes,
     check_object_exists,
     get_object_bytes,
-    iter_prefix_shard, list_common_prefixes,
+    iter_prefix_shard,
 )
 from kl3m_data.logger import LOGGER
 
@@ -300,7 +300,9 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "convert":
-        convert_dataset(args.dataset, args.max_size * 1024 * 1024, args.clobber, args.shard_prefix)
+        convert_dataset(
+            args.dataset, args.max_size * 1024 * 1024, args.clobber, args.shard_prefix
+        )
 
     elif args.command == "upload":
         # Validate filters

@@ -46,15 +46,6 @@ def parse(
         xml_doc = lxml.etree.fromstring(content)
         html_doc = EU_OJ_XSL(xml_doc)
 
-        import uuid
-
-        x = uuid.uuid4()
-        with open(f"/tmp/euoj_{x}.xml", "wb") as output_file:
-            output_file.write(content)
-
-        with open(f"/tmp/euoj_{x}.html", "wt") as output_file:
-            output_file.write(lxml.etree.tostring(html_doc).decode())
-
         return generic_html.parse(
             lxml.etree.tostring(html_doc),
             source=source,

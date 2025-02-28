@@ -364,9 +364,13 @@ def upload_form_type(
                         # clean up the content
                         if 1188 in document["representations"][mime_type]:
                             # html.unescape it and re-tokenize
-                            escaped_content = OUTPUT_TOKENIZER.decode(document["representations"][mime_type])
+                            escaped_content = OUTPUT_TOKENIZER.decode(
+                                document["representations"][mime_type]
+                            )
                             unescaped_content = html.unescape(escaped_content)
-                            output_tokens = OUTPUT_TOKENIZER.encode(unescaped_content).ids
+                            output_tokens = OUTPUT_TOKENIZER.encode(
+                                unescaped_content
+                            ).ids
                         else:
                             output_tokens = document["representations"][mime_type]
 
