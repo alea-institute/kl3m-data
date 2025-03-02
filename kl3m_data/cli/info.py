@@ -24,7 +24,7 @@ from kl3m_data.utils.s3_utils import (
 )
 
 
-def build_index() -> None:
+def build_document_index() -> None:
     """
     Build an index with the list of all available source documents on S3.
 
@@ -45,6 +45,54 @@ def build_index() -> None:
         bucket="data.kl3m.ai",
         key="documents/index.gz",
         path="documents.index.gz",
+    )
+
+
+def build_representation_index() -> None:
+    """
+    Build an index with the list of all available source documents on S3.
+
+    Returns:
+        None
+    """
+    # set up client and iterator
+    client = get_s3_client()
+    prog_bar = tqdm.tqdm(iter_prefix(client, "data.kl3m.ai", "representations/"))
+
+    with gzip.open("representations.index.gz", "wt", encoding="utf-8") as index_file:
+        for key in prog_bar:
+            index_file.write(key[len("representations/") :] + "\n")
+
+    # push this to s3
+    put_object_path(
+        client=client,
+        bucket="data.kl3m.ai",
+        key="representations/index.gz",
+        path="representations.index.gz",
+    )
+
+
+def build_parquet_index() -> None:
+    """
+    Build an index with the list of all available source documents on S3.
+
+    Returns:
+        None
+    """
+    # set up client and iterator
+    client = get_s3_client()
+    prog_bar = tqdm.tqdm(iter_prefix(client, "data.kl3m.ai", "parquet/"))
+
+    with gzip.open("parquet.index.gz", "wt", encoding="utf-8") as index_file:
+        for key in prog_bar:
+            index_file.write(key[len("parquet/") :] + "\n")
+
+    # push this to s3
+    put_object_path(
+        client=client,
+        bucket="data.kl3m.ai",
+        key="parquet/index.gz",
+        path="parquet.index.gz",
     )
 
 
@@ -136,16 +184,28 @@ if __name__ == "__main__":
     # - print/export datasets as jsonl
     arg_parser = argparse.ArgumentParser()
     # command
-    arg_parser.add_argument("command", type=str, choices=["build_index", "build_table"])
+    arg_parser.add_argument(
+        "command",
+        type=str,
+        choices=[
+            "build_document_index",
+            "build_representation_index",
+            "build_parquet_index",
+            "build_table",
+        ],
+    )
     arg_parser.add_argument("--output", type=Path, default=None)
     arg_parser.add_argument("--format", type=str, default="csv")
     arg_parser.add_argument("--counts", action="store_true")
     arg_parser.add_argument("--dataset_prefix", type=str, default="kl3m-")
     args = arg_parser.parse_args()
 
-    if args.command == "build_index":
-        build_index()
-        exit(0)
+    if args.command == "build_document_index":
+        build_document_index()
+    elif args.command == "build_representation_index":
+        build_representation_index()
+    elif args.command == "build_parquet_index":
+        build_parquet_index()
     elif args.command == "build_table":
         datasets = get_datasets(args.dataset_prefix, args.counts)
         df = pl.DataFrame(datasets)
