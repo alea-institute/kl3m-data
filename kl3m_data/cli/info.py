@@ -4,6 +4,7 @@ Retrieve, calculate, or export various information about the dataset(s)
 
 # imports
 import argparse
+import gzip
 import io
 import json
 import statistics
@@ -11,8 +12,40 @@ from pathlib import Path
 
 # packages
 import polars as pl
+import tqdm
 from datasets import load_dataset
 from huggingface_hub import hf_api
+
+# project
+from kl3m_data.utils.s3_utils import (
+    iter_prefix,
+    get_s3_client,
+    put_object_path,
+)
+
+
+def build_index() -> None:
+    """
+    Build an index with the list of all available source documents on S3.
+
+    Returns:
+        None
+    """
+    # set up client and iterator
+    client = get_s3_client()
+    prog_bar = tqdm.tqdm(iter_prefix(client, "data.kl3m.ai", "documents/"))
+
+    with gzip.open("documents.index.gz", "wt", encoding="utf-8") as index_file:
+        for key in prog_bar:
+            index_file.write(key[len("documents/") :] + "\n")
+
+    # push this to s3
+    put_object_path(
+        client=client,
+        bucket="data.kl3m.ai",
+        key="documents/index.gz",
+        path="documents.index.gz",
+    )
 
 
 def get_token_statistics(dataset_id: str) -> dict[str, int | float]:
@@ -102,30 +135,37 @@ if __name__ == "__main__":
     # - print/export datasets as csv
     # - print/export datasets as jsonl
     arg_parser = argparse.ArgumentParser()
+    # command
+    arg_parser.add_argument("command", type=str, choices=["build_index", "build_table"])
     arg_parser.add_argument("--output", type=Path, default=None)
     arg_parser.add_argument("--format", type=str, default="csv")
     arg_parser.add_argument("--counts", action="store_true")
     arg_parser.add_argument("--dataset_prefix", type=str, default="kl3m-")
     args = arg_parser.parse_args()
-    datasets = get_datasets(args.dataset_prefix, args.counts)
-    df = pl.DataFrame(datasets)
 
-    if args.output is not None:
-        with open(args.output, "wt", encoding="utf-8") as f:
+    if args.command == "build_index":
+        build_index()
+        exit(0)
+    elif args.command == "build_table":
+        datasets = get_datasets(args.dataset_prefix, args.counts)
+        df = pl.DataFrame(datasets)
+
+        if args.output is not None:
+            with open(args.output, "wt", encoding="utf-8") as f:
+                if args.format == "jsonl":
+                    for record in df.to_dicts():
+                        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+                elif args.format == "csv":
+                    df.write_csv(f)
+                else:
+                    raise ValueError(f"Unsupported format: {args.format}")
+        else:
             if args.format == "jsonl":
                 for record in df.to_dicts():
-                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
+                    print(json.dumps(record, ensure_ascii=False))
             elif args.format == "csv":
-                df.write_csv(f)
+                output_buffer = io.StringIO()
+                df.write_csv(output_buffer)
+                print(output_buffer.getvalue())
             else:
                 raise ValueError(f"Unsupported format: {args.format}")
-    else:
-        if args.format == "jsonl":
-            for record in df.to_dicts():
-                print(json.dumps(record, ensure_ascii=False))
-        elif args.format == "csv":
-            output_buffer = io.StringIO()
-            df.write_csv(output_buffer)
-            print(output_buffer.getvalue())
-        else:
-            raise ValueError(f"Unsupported format: {args.format}")
