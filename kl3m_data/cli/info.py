@@ -17,9 +17,11 @@ from datasets import load_dataset
 from huggingface_hub import hf_api
 
 # project
+from kl3m_data.utils.parquet_utils import deserialize_document_bytes
 from kl3m_data.utils.s3_utils import (
     iter_prefix,
     get_s3_client,
+    get_object_bytes,
     put_object_path,
 )
 
@@ -94,6 +96,85 @@ def build_parquet_index() -> None:
         key="parquet/index.gz",
         path="parquet.index.gz",
     )
+
+
+def count_parquet_index(prefix: str = "/") -> None:
+    """
+    Count the number of parquet files in the index.
+
+    Returns:
+        None
+    """
+    # set up client and iterator
+    client = get_s3_client()
+    parquet_path = "parquet/" + prefix.lstrip("/")
+    prog_bar = tqdm.tqdm(iter_prefix(client, "data.kl3m.ai", parquet_path))
+
+    # count the number of parquet files
+    total_token_count = 0
+    total_docs = 0
+    mime_type_token_count = {}
+    token_count_list = []
+    # token_entropy_list = []
+    for key in prog_bar:
+        # load bytes
+        try:
+            object_data = deserialize_document_bytes(
+                get_object_bytes(
+                    client=client,
+                    bucket="data.kl3m.ai",
+                    key=key,
+                )
+            )
+
+            for mime_type, tokens in object_data.get("representations", {}).items():
+                # check if mime type in count
+                if mime_type not in mime_type_token_count:
+                    mime_type_token_count[mime_type] = 0
+
+                # get entropy
+                num_tokens = len(tokens)
+                # sample_p = Counter(tokens)
+                # entropy = -sum(p / num_tokens * math.log2(p / num_tokens) for p in sample_p.values())
+
+                # add to count
+                token_count_list.append(num_tokens)
+                # token_entropy_list.append(entropy)
+                mime_type_token_count[mime_type] += len(tokens)
+                total_token_count += len(tokens)
+                total_docs += 1
+            prog_bar.set_postfix(
+                {
+                    "tokens": total_token_count,
+                    "mime_types": len(mime_type_token_count),
+                    "mean_tokens": total_token_count / max(total_docs, 1),
+                }
+            )
+        except Exception as e:
+            print(f"Error loading {key}: {e}")
+            continue
+
+    # write out into token_count.json
+    with gzip.open("token_count.json.gz", "wt", encoding="utf-8") as output_file:
+        output_file.write(
+            json.dumps(
+                {
+                    "statistics": {
+                        "total_tokens": total_token_count,
+                        "total_docs": total_docs,
+                        "mean_tokens": statistics.mean(token_count_list),
+                        "median_tokens": statistics.median(token_count_list),
+                        "max_tokens": max(token_count_list),
+                        # "mean_entropy": statistics.mean(token_entropy_list),
+                        # "median_entropy": statistics.median(token_entropy_list),
+                        # "max_entropy": max(token_entropy_list),
+                    },
+                    "mime_type_counts": mime_type_token_count,
+                    "token_counts": token_count_list,
+                    # "token_entropies": token_entropy_list,
+                }
+            )
+        )
 
 
 def get_token_statistics(dataset_id: str) -> dict[str, int | float]:
@@ -191,6 +272,7 @@ if __name__ == "__main__":
             "build_document_index",
             "build_representation_index",
             "build_parquet_index",
+            "count_parquet_index",
             "build_table",
         ],
     )
@@ -206,6 +288,8 @@ if __name__ == "__main__":
         build_representation_index()
     elif args.command == "build_parquet_index":
         build_parquet_index()
+    elif args.command == "count_parquet_index":
+        count_parquet_index(args.dataset_prefix)
     elif args.command == "build_table":
         datasets = get_datasets(args.dataset_prefix, args.counts)
         df = pl.DataFrame(datasets)
