@@ -11,6 +11,7 @@ import alea_preprocess
 
 # project
 from kl3m_data.logger import LOGGER
+from kl3m_data.parsers.generic_tika import get_html_contents, DEFAULT_TIKA_URL
 from kl3m_data.parsers.mdtransformer.auto_parser import AutoParser
 from kl3m_data.parsers.mdtransformer.base.parser_config import ParserConfig
 from kl3m_data.parsers.parser_types import (
@@ -26,6 +27,7 @@ def parse(
     content: bytes,
     source: Optional[str] = None,
     identifier: Optional[str] = None,
+    tika_url: str = DEFAULT_TIKA_URL
 ) -> List[ParsedDocument]:
     """
     Parse the document data.
@@ -34,6 +36,7 @@ def parse(
         content (bytes): Document content.
         source (str): Document source.
         identifier (str): Document identifier.
+        tika_url (str): Tika URL.
 
     Returns:
         List[ParsedDocument]: Parsed document
@@ -86,7 +89,12 @@ def parse(
             text = mdt_text
             LOGGER.info("Using text from mdt (equal length)")
         else:
-            text = None
+            # use tika as a fallback
+            text = "\n\n".join(
+                get_html_contents(tika_url, content)
+            ).strip()
+            if len(text) == 0:
+                text = None
 
         # if we have a text return, make sure it's unescaped
         if text is not None and len(text.strip()) > 0:
