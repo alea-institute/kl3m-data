@@ -7,9 +7,11 @@ import csv
 import datetime
 import hashlib
 import urllib.parse
-from typing import Any, Generator, Optional
+from typing import Any, Generator, Optional, List, Tuple
+from wsgiref import headers
 
 # packages
+from playwright.sync_api import sync_playwright as playwright
 
 # project
 from kl3m_data.logger import LOGGER
@@ -133,6 +135,31 @@ class EUOJSource(BaseSource):
                     "max_year must be a valid year in the format YYYY"
                 ) from e
 
+        import httpx
+        self.client = httpx.Client(
+            timeout=60,
+            follow_redirects=True,
+        )
+
+    def _get_browser_headers(self):
+        """Get headers that mimic a real browser."""
+        return {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9,de;q=0.8',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'same-origin',
+            'Sec-Fetch-User': '?1',
+            'sec-ch-ua': '"Chromium";v="120", "Google Chrome";v="120"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'Cache-Control': 'max-age=0',
+        }
+
     @staticmethod
     def generate_sparql_query_url(
         year: int,
@@ -250,7 +277,7 @@ class EUOJSource(BaseSource):
     ) -> Generator[SourceProgressStatus, None, None]:
         raise NotImplementedError("Not implemented")
 
-    def download_entry(self, entry: dict) -> SourceDownloadStatus:
+    def download_fmx4(self, entry: dict) -> bool:
         """
         Download the specified OJ entry and upload to S3.
 
@@ -270,7 +297,6 @@ class EUOJSource(BaseSource):
         # get the download URL
         try:
             # get the identifier
-
             identifier = entry["OJ"]
             lang = entry["lang"]
             id_ = identifier.split("/").pop() + "/" + lang.split("/").pop()
@@ -278,7 +304,7 @@ class EUOJSource(BaseSource):
             # check if it exists
             if self.check_id(id_):
                 LOGGER.info("Document %s already exists", id_)
-                return SourceDownloadStatus.EXISTED
+                return False
 
             # get the download content otherwise
             download_url = entry["fmx4_to_download"]
@@ -325,10 +351,148 @@ class EUOJSource(BaseSource):
             # push to s3
             doc.to_s3()
 
-            return SourceDownloadStatus.SUCCESS
+            return True
+        except Exception as e:  # pylint: disable=broad-except
+            LOGGER.error("Failed to download and parse OJ FMX4 entry %s: %s", entry, e)
+            raise e
+
+
+    def get_entry_url_list(self, entry: dict) -> List[str]:
+        """
+        Return the list of EU documents to retrieve from the entry
+
+        Args:
+            entry (dict): the OJ entry to download
+
+        Returns:
+            List of URLs
+        """
+        # get the download URL
+        try:
+            # start by storing the full fmx4 copy
+            # fmx4_download_status = self.download_fmx4(entry)
+            # TODO: revisit the structure data options here later
+
+            # get the identifier
+            identifier = entry["OJ"]
+            lang = entry["lang"]
+
+            # get the rdf from the identifier
+            LOGGER.info("Retrieving RDF for %s", identifier)
+            rdf_data = self._get_xml(
+                identifier
+            )
+            LOGGER.info("Retrieved RDF for %s", identifier)
+
+            # find all tags with rdf:resource attribute
+            seen_urls = set()
+            result_list = []
+            for tag in rdf_data.xpath("//*[@rdf:resource]", namespaces={"rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#"}):
+                # get the resource
+                tag_url = tag.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}resource")
+                tag_url_parsed = urllib.parse.urlparse(tag_url)
+                if "europa.eu" in tag_url_parsed.netloc:
+                    # remove any html/rdf anchors
+                    clean_url = tag_url_parsed.scheme + "://" + tag_url_parsed.netloc + tag_url_parsed.path
+                    if clean_url not in seen_urls:
+                        result_list.append(clean_url)
+                        seen_urls.add(clean_url)
+
+            # do the same for rdf:about now
+            for tag in rdf_data.xpath("//*[@rdf:about]", namespaces={"rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#"}):
+                # get the resource
+                tag_url = tag.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}about")
+                tag_url_parsed = urllib.parse.urlparse(tag_url)
+                if "europa.eu" in tag_url_parsed.netloc:
+                    # remove any html/rdf anchors
+                    clean_url = tag_url_parsed.scheme + "://" + tag_url_parsed.netloc + tag_url_parsed.path
+                    if clean_url not in seen_urls:
+                        result_list.append(clean_url)
+                        seen_urls.add(clean_url)
+
+            LOGGER.info(
+                "Found %d URLs for OJ entry %s",
+                len(result_list),
+                identifier,
+            )
+            return result_list
         except Exception as e:  # pylint: disable=broad-except
             LOGGER.error("Failed to download and parse OJ entry %s: %s", entry, e)
+            return []
+
+    def download_entry_url(self, entry: dict, url: str) -> SourceDownloadStatus:
+        """
+        Download the specified OJ entry and upload to S3.
+
+        Args:
+            entry (dict): the OJ entry to download
+            url (str): the URL to download
+
+        Returns:
+            SourceDownloadStatus: the download status
+        """
+        # 1. the URL to download is in the fmx4_to_download field
+        # 2. the identifier URI is in http://publications.europa.eu/resource/oj/JOL_2000_239_R
+        # 3. the ID is the last part of the URI
+        # 4. the title is in the title_ field
+        # 5. the authors are in the authors field
+        # 6. the date is in the date_document field as YYYY-MM-DD
+
+        # get the download URL
+        try:
+            # parse and strip the scheme from the url
+            url_parsed = urllib.parse.urlparse(url)
+            object_identifier = url_parsed.netloc + url_parsed.path
+
+            # check fi we have this id already
+            if self.check_id(object_identifier):
+                LOGGER.info("Document %s already exists", object_identifier)
+                return SourceDownloadStatus.EXISTED
+            else:
+                LOGGER.info("Downloading document %s", object_identifier)
+
+            # use httpx instead
+            response = self._get_response(
+                url,
+                headers=self._get_browser_headers(),
+            )
+            content_type = response.headers["content-type"]
+            content = response.content
+
+            # get the title
+            title = entry["title_"].strip()
+
+            # get the authors
+            author = entry["authors"].strip()
+
+            # now create the document object
+            doc = Document(
+                dataset_id=self.metadata.dataset_id,
+                id=object_identifier,
+                identifier=object_identifier,
+                title=title,
+                creator=[author],
+                publisher="Publications Office of the European Union",
+                date=datetime.datetime.strptime(entry["date_document"], "%Y-%m-%d"),
+                format=content_type,
+                content=content,
+                size=len(content),
+                blake2b=hashlib.blake2b(content).hexdigest(),
+                subject=[
+                    "European Union",
+                    "Official Journal of the European Union",
+                ],
+                extra={**entry},
+            )
+
+            # save
+            doc.to_s3()
+
+            return SourceDownloadStatus.SUCCESS
+        except Exception as e:
+            LOGGER.error("Failed to download and parse OJ entry %s: %s", entry, e)
             return SourceDownloadStatus.FAILURE
+
 
     def download_all(
         self, **kwargs: dict[str, Any]
@@ -347,6 +511,9 @@ class EUOJSource(BaseSource):
             total=None, description="Downloading EU OJ resources..."
         )
 
+        # skip seen urls
+        seen_urls = set()
+
         # iterate over the years
         for year in range(self.min_year, self.max_year + 1):
             # get all the entries
@@ -357,20 +524,29 @@ class EUOJSource(BaseSource):
             # iterate over the entries
             for entry in entries:
                 try:
-                    # download the entry
-                    download_status = self.download_entry(entry)
-                    if download_status in (
-                        SourceDownloadStatus.SUCCESS,
-                        SourceDownloadStatus.EXISTED,
-                    ):
-                        current_progress.success += 1
-                    else:
-                        current_progress.failure += 1
+                    # get the entries to retrieve
+                    entry_url_list = self.get_entry_url_list(entry)
 
-                    current_progress.extra = {
-                        "year": year,
-                        "id": entry.get("OJ", None),
-                    }
+                    for url in entry_url_list:
+                        # skip seen urls
+                        if url in seen_urls:
+                            continue
+
+                        download_status = self.download_entry_url(entry, url)
+                        if download_status in (
+                            SourceDownloadStatus.SUCCESS,
+                            SourceDownloadStatus.EXISTED,
+                        ):
+                            current_progress.success += 1
+                        else:
+                            current_progress.failure += 1
+
+                        current_progress.extra = {
+                            "year": year,
+                            "id": entry.get("OJ", None),
+                        }
+
+                        seen_urls.add(url)
                 except Exception as e:  # pylint: disable=broad-except
                     LOGGER.error("Error downloading document: %s", str(e))
                     current_progress.message = str(e)
