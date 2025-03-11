@@ -487,7 +487,11 @@ class BaseSource(abc.ABC):
         Returns:
             lxml.etree.Element: XML response content.
         """
-        return lxml.etree.fromstring(self._get(url=url, params=params, headers=headers))
+        # create huge tree recovering parser
+        parser = lxml.etree.XMLParser(recover=True, huge_tree=True)
+        return lxml.etree.fromstring(
+            self._get(url=url, params=params, headers=headers), parser=parser
+        )
 
     def _post_xml(
         self,

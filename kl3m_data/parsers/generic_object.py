@@ -164,22 +164,13 @@ def parse_content(
         "text/xml",
         "application/xml",
     ):
-        if object_source == "https://publications.europa.eu/":
-            documents.extend(
-                eu_oj_xml.parse(
-                    content=object_content,
-                    source=object_source,
-                    identifier=object_url,
-                )
+        documents.extend(
+            generic_xml.parse(
+                content=object_content,
+                source=object_source,
+                identifier=object_url,
             )
-        else:
-            documents.extend(
-                generic_xml.parse(
-                    content=object_content,
-                    source=object_source,
-                    identifier=object_url,
-                )
-            )
+        )
     elif object_format in ("application/json",):
         documents.extend(
             generic_json.parse(
