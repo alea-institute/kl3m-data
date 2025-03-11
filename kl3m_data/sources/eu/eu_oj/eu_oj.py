@@ -7,11 +7,9 @@ import csv
 import datetime
 import hashlib
 import urllib.parse
-from typing import Any, Generator, Optional, List, Tuple
-from wsgiref import headers
+from typing import Any, Generator, Optional, List
 
 # packages
-from playwright.sync_api import sync_playwright as playwright
 
 # project
 from kl3m_data.logger import LOGGER
@@ -136,6 +134,7 @@ class EUOJSource(BaseSource):
                 ) from e
 
         import httpx
+
         self.client = httpx.Client(
             timeout=60,
             follow_redirects=True,
@@ -144,20 +143,20 @@ class EUOJSource(BaseSource):
     def _get_browser_headers(self):
         """Get headers that mimic a real browser."""
         return {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept-Language': 'en-US,en;q=0.9,de;q=0.8',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'same-origin',
-            'Sec-Fetch-User': '?1',
-            'sec-ch-ua': '"Chromium";v="120", "Google Chrome";v="120"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Windows"',
-            'Cache-Control': 'max-age=0',
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9,de;q=0.8",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-User": "?1",
+            "sec-ch-ua": '"Chromium";v="120", "Google Chrome";v="120"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"',
+            "Cache-Control": "max-age=0",
         }
 
     @staticmethod
@@ -356,7 +355,6 @@ class EUOJSource(BaseSource):
             LOGGER.error("Failed to download and parse OJ FMX4 entry %s: %s", entry, e)
             raise e
 
-
     def get_entry_url_list(self, entry: dict) -> List[str]:
         """
         Return the list of EU documents to retrieve from the entry
@@ -379,33 +377,49 @@ class EUOJSource(BaseSource):
 
             # get the rdf from the identifier
             LOGGER.info("Retrieving RDF for %s", identifier)
-            rdf_data = self._get_xml(
-                identifier
-            )
+            rdf_data = self._get_xml(identifier)
             LOGGER.info("Retrieved RDF for %s", identifier)
 
             # find all tags with rdf:resource attribute
             seen_urls = set()
             result_list = []
-            for tag in rdf_data.xpath("//*[@rdf:resource]", namespaces={"rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#"}):
+            for tag in rdf_data.xpath(
+                "//*[@rdf:resource]",
+                namespaces={"rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#"},
+            ):
                 # get the resource
-                tag_url = tag.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}resource")
+                tag_url = tag.get(
+                    "{http://www.w3.org/1999/02/22-rdf-syntax-ns#}resource"
+                )
                 tag_url_parsed = urllib.parse.urlparse(tag_url)
                 if "europa.eu" in tag_url_parsed.netloc:
                     # remove any html/rdf anchors
-                    clean_url = tag_url_parsed.scheme + "://" + tag_url_parsed.netloc + tag_url_parsed.path
+                    clean_url = (
+                        tag_url_parsed.scheme
+                        + "://"
+                        + tag_url_parsed.netloc
+                        + tag_url_parsed.path
+                    )
                     if clean_url not in seen_urls:
                         result_list.append(clean_url)
                         seen_urls.add(clean_url)
 
             # do the same for rdf:about now
-            for tag in rdf_data.xpath("//*[@rdf:about]", namespaces={"rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#"}):
+            for tag in rdf_data.xpath(
+                "//*[@rdf:about]",
+                namespaces={"rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#"},
+            ):
                 # get the resource
                 tag_url = tag.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}about")
                 tag_url_parsed = urllib.parse.urlparse(tag_url)
                 if "europa.eu" in tag_url_parsed.netloc:
                     # remove any html/rdf anchors
-                    clean_url = tag_url_parsed.scheme + "://" + tag_url_parsed.netloc + tag_url_parsed.path
+                    clean_url = (
+                        tag_url_parsed.scheme
+                        + "://"
+                        + tag_url_parsed.netloc
+                        + tag_url_parsed.path
+                    )
                     if clean_url not in seen_urls:
                         result_list.append(clean_url)
                         seen_urls.add(clean_url)
@@ -492,7 +506,6 @@ class EUOJSource(BaseSource):
         except Exception as e:
             LOGGER.error("Failed to download and parse OJ entry %s: %s", entry, e)
             return SourceDownloadStatus.FAILURE
-
 
     def download_all(
         self, **kwargs: dict[str, Any]

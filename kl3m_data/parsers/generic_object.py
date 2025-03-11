@@ -10,7 +10,6 @@ from typing import List, Optional
 # project
 from kl3m_data.logger import LOGGER
 from kl3m_data.parsers import (
-    eu_oj_xml,
     generic_html,
     generic_json,
     generic_pdf,
