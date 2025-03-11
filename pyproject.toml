@@ -3,7 +3,7 @@ name = "kl3m-data"
 version = "0.1.1"
 description = "KL3M training data collection and preprocesing from the ALEA Institute"
 authors = [{ name = "ALEA Institute", email = "hello@aleainstitute.ai" }]
-requires-python = ">=3.10,<4.0.0"
+requires-python = ">=3.12,<4.0.0"
 readme = "README.md"
 license = "MIT"
 keywords = [
@@ -46,6 +46,8 @@ dependencies = [
     "polars>=1.21.0",
     "valkey>=6.0.2",
     "pytesseract>=0.3.13",
+    "ipython>=8.33.0",
+    "alea-markdown[markdownify]>=0.1.0",
 ]
 
 [project.urls]

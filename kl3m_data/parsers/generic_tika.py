@@ -7,6 +7,7 @@ from typing import List, Optional
 
 # packages
 import alea_preprocess
+from alea_markdown.normalizer import MarkdownNormalizer
 
 # project
 from kl3m_data.logger import LOGGER
@@ -58,6 +59,7 @@ def parse_tika(
                         doc, output_links=False, output_images=False
                     )
                 )
+                doc_markdown = MarkdownNormalizer().normalize(doc_markdown)
                 documents.append(
                     ParsedDocument(
                         source=object_source,

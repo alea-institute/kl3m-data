@@ -11,6 +11,7 @@ from typing import List, Optional
 # packages
 import alea_preprocess
 import pytesseract
+from alea_markdown.normalizer import MarkdownNormalizer
 from pypdfium2 import PdfDocument
 from PIL import Image
 
@@ -50,6 +51,7 @@ def parse_digital_pdf(
         markdown = alea_preprocess.parsers.pdf.conversion.extract_buffer_markdown(
             content
         )
+        markdown = MarkdownNormalizer().normalize(markdown)
     except Exception as e:
         LOGGER.error("Error extracting markdown: %s", e)
         markdown = None

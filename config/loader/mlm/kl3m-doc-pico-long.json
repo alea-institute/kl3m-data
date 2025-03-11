@@ -1,0 +1,24 @@
+{
+  "datasets": [
+    "alea-institute/kl3m-data-usc",
+    "alea-institute/kl3m-data-ecfr",
+    "alea-institute/kl3m-data-fr"
+  ],
+  "tasks": [
+    "mlm",
+    "pmlm"
+  ],
+  "interleave": true,
+  "stream": true,
+  "sequence_length": 4096,
+  "min_queue_size": {
+    "mlm": 1000,
+    "pmlm": 1000
+  },
+  "input_tokenizer_name": "alea-institute/kl3m-004-128k-cased",
+  "output_tokenizer_name": "alea-institute/kl3m-004-128k-cased",
+  "valkey_host": "localhost",
+  "valkey_port": 6379,
+  "valkey_db": 0,
+  "valkey_batch_size": 1000
+}

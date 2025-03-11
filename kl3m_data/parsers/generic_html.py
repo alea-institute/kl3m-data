@@ -3,23 +3,21 @@ Generic HTML parsing
 """
 
 # imports
-import html
 from typing import List, Optional
 
 # packages
-import alea_preprocess
 
 # project
 from kl3m_data.logger import LOGGER
-from kl3m_data.parsers.mdtransformer.auto_parser import AutoParser
-from kl3m_data.parsers.mdtransformer.base.parser_config import ParserConfig
+from alea_markdown.normalizer import MarkdownNormalizer
+from alea_markdown.auto_parser import AutoParser
+from alea_markdown.regex_parser import RegexHTMLParser
+from alea_markdown.lxml_parser import LXMLHTMLParser
+from alea_markdown.base.parser_config import ParserConfig
 from kl3m_data.parsers.parser_types import (
     ParsedDocument,
     ParsedDocumentRepresentation,
 )
-
-
-HTML_TO_TEXT_RATIO = 0.1
 
 
 def parse(
@@ -45,52 +43,54 @@ def parse(
 
     # extract markdown
     try:
+        # decode
+        content = content.decode("utf-8")
+
+        # shared config
+        parser_config = ParserConfig(
+            output_links=False,
+            output_images=False,
+        )
+        # get all three parser types: regex, lxml, markdownify
         try:
-            tl_text = alea_preprocess.parsers.html.conversion.extract_buffer_markdown(
-                content.decode(), output_links=False, output_images=False
-            )
-
-            # if it's empty, try again after wrapping with <html> tags
-            if tl_text is None or len(tl_text.strip()) == 0:
-                wrapped_content = f"<html>{content.decode()}</html>"
-                tl_text = (
-                    alea_preprocess.parsers.html.conversion.extract_buffer_markdown(
-                        wrapped_content, output_links=False, output_images=False
-                    )
-                )
-        except Exception as e:
-            LOGGER.error("Error extracting markdown via tl: %s", e)
-            tl_text = ""
+            regex_parser = RegexHTMLParser(parser_config)
+            regex_text = regex_parser.parse(content)
+        except Exception as e:  # pylint: disable=broad-except
+            LOGGER.error("Error parsing with regex: %s", e)
+            regex_text = None
 
         try:
-            mdt_text = AutoParser(
-                ParserConfig(output_images=False, output_links=False)
-            ).parse(
-                content.decode(),
-            )
-        except Exception as e:
-            LOGGER.error("Error extracting markdown via mdt: %s", e)
-            mdt_text = ""
+            lxml_parser = LXMLHTMLParser(parser_config)
+            lxml_text = lxml_parser.parse(content)
+        except Exception as e:  # pylint: disable=broad-except
+            LOGGER.error("Error parsing with lxml: %s", e)
+            lxml_text = None
 
-        # get the longer one
-        if len(tl_text) > len(mdt_text) or mdt_text is None:
-            text = tl_text
-            LOGGER.info("Using text from tl")
-        elif len(mdt_text) > len(tl_text) or tl_text is None:
-            text = mdt_text
-            LOGGER.info("Using text from mdt")
-        elif tl_text is not None:
-            text = tl_text
-            LOGGER.info("Using text from tl (equal length)")
-        elif mdt_text is not None:
-            text = mdt_text
-            LOGGER.info("Using text from mdt (equal length)")
-        else:
+        try:
+            auto_parser = AutoParser(parser_config)
+            auto_text = auto_parser.parse(content)
+        except Exception as e:  # pylint: disable=broad-except
+            LOGGER.error("Error parsing with auto: %s", e)
+            auto_text = None
+
+        # get the longest text
+        regex_length = len(regex_text.split()) if regex_text else 0
+        lxml_length = len(lxml_text.split()) if lxml_text else 0
+        auto_length = len(auto_text.split()) if auto_text else 0
+        max_length = max(regex_length, lxml_length, auto_length)
+        if max_length == 0:
             text = None
+        elif max_length == regex_length:
+            text = regex_text
+        elif max_length == lxml_length:
+            text = lxml_text
+        else:
+            text = auto_text
 
-        # if we have a text return, make sure it's unescaped
-        if text is not None and len(text.strip()) > 0:
-            text = html.unescape(text)
+        if text:
+            # normalize
+            normalizer = MarkdownNormalizer()
+            text = normalizer.normalize(text)
 
             # create the parsed document
             documents.append(
