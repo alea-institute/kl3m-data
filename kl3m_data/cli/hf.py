@@ -487,16 +487,42 @@ def process_and_upload(
     result_handler_thread.daemon = True
     result_handler_thread.start()
     
-    # Process documents from the scored queue and yield to Dataset.from_generator
-    def yield_scored_documents() -> Generator[Dict[str, Any], None, None]:
-        """Yield documents that pass quality filtering with end-to-end processing."""
-        documents_yielded = 0
+    # Collect documents from the queue first, then create a simple generator
+    # This avoids pickle issues with thread-local data in the Console object
+    def collect_documents():
+        """Collect all documents from the queue into a list first."""
+        documents = []
+        documents_collected = 0
         
-        # Signal that we're starting to yield documents
-        console.print("[cyan]Starting document upload to HuggingFace...[/cyan]")
+        console.print("[cyan]Collecting documents for HuggingFace upload...[/cyan]")
         
-        while True:
-            try:
+        # Create a reporting thread to show progress while collecting
+        def collection_reporter():
+            last_count = 0
+            while not stop_event.is_set():
+                time.sleep(2.0)
+                if len(documents) > last_count:
+                    last_count = len(documents)
+                    console.print(f"[cyan]Collected {last_count} documents[/cyan]")
+                # Exit if all processing is complete
+                if (not producer_thread.is_alive() and 
+                    all(not t.is_alive() for t in consumer_threads) and
+                    scored_doc_queue.empty()):
+                    break
+        
+        # Start the reporter thread
+        reporter_thread = threading.Thread(target=collection_reporter)
+        reporter_thread.daemon = True
+        reporter_thread.start()
+        
+        # Collect documents until we have enough or processing is complete
+        try:
+            while True:
+                # Check if we should stop collecting
+                if (limit and len(documents) >= limit):
+                    console.print(f"[cyan]Reached limit of {limit} documents[/cyan]")
+                    break
+                
                 # Check if all processing is complete and queue is empty
                 if (not producer_thread.is_alive() and 
                     all(not t.is_alive() for t in consumer_threads) and
@@ -506,41 +532,45 @@ def process_and_upload(
                 # Get document from queue with timeout
                 try:
                     doc = scored_doc_queue.get(timeout=0.5)
+                    documents.append(doc)
+                    scored_doc_queue.task_done()
                 except queue.Empty:
                     continue
-                
-                # Yield the document
-                yield doc
-                documents_yielded += 1
-                
-                # Signal task completion
-                scored_doc_queue.task_done()
-                
-                # Periodically report progress
-                if documents_yielded % 100 == 0:
-                    console.print(f"[cyan]Uploaded {documents_yielded} documents to HuggingFace[/cyan]")
-                
-                # Check if we've reached the limit
-                if limit and documents_yielded >= limit:
-                    console.print(f"[cyan]Reached limit of {limit} documents[/cyan]")
-                    break
-                    
-            except Exception as e:
-                console.print(f"Error yielding document: {e}")
-                continue
+                except Exception as e:
+                    console.print(f"Error collecting document: {e}")
+        finally:
+            # Stop the reporter thread
+            stop_event.set()
+            reporter_thread.join(timeout=2.0)
+            
+        # Return the collected documents
+        return documents
+        
+    # Use a simple generator function that doesn't reference any unpicklable objects
+    def yield_scored_documents() -> Generator[Dict[str, Any], None, None]:
+        """Yield documents from the prepared list."""
+        # This is a clean generator function that can be pickled
+        for doc in collected_documents:
+            yield doc
     
     # Create and upload dataset
     try:
-        # Use Dataset.from_generator but delay until documents are available
+        # Wait a bit for initial documents to be processed
         while scored_doc_queue.empty() and producer_thread.is_alive():
             time.sleep(0.5)
-            
+        
+        # Collect documents first to avoid pickling issues
+        collected_documents = collect_documents()
+        
         # Check if we have any documents to upload
-        if scored_doc_queue.empty() and not producer_thread.is_alive():
+        if not collected_documents:
             console.print("[bold red]No documents available for upload. Check logs for details.[/bold red]")
             stop_event.set()
         else:
-            # Create and upload the dataset
+            console.print(f"[cyan]Collected {len(collected_documents)} documents for upload[/cyan]")
+            
+            # Create and upload the dataset with our clean generator
+            console.print(f"[cyan]Creating HuggingFace dataset...[/cyan]")
             dataset = Dataset.from_generator(yield_scored_documents)
             console.print(f"[cyan]Pushing dataset to HuggingFace as {output_name}...[/cyan]")
             dataset.push_to_hub(output_name)
