@@ -26,51 +26,53 @@ DEFAULT_TIMEOUT = 600
 
 
 def get_s3_config(
-    pool_size: Optional[int] = None,
-    connect_timeout: Optional[int] = None,
-    read_timeout: Optional[int] = None,
-    retry_count: Optional[int] = None,
+    pool_size: Optional[int] = 25,  # Larger connection pool for better parallelism
+    connect_timeout: Optional[int] = 10,  # Shorter connect timeout
+    read_timeout: Optional[int] = 60,  # Longer read timeout
+    retry_count: Optional[int] = 3,  # More retries
+    retry_mode: Optional[str] = "adaptive",  # Adaptive retries
     region_name: Optional[str] = None,
 ) -> botocore.config.Config:
     """
-    Get an S3 configuration object with the specified parameters.
+    Get an optimized S3 configuration object with the specified parameters.
 
     Args:
         pool_size (int): Number of connections in the pool.
         connect_timeout (int): Connection timeout in seconds.
         read_timeout (int): Read timeout in seconds.
         retry_count (int): Number of retries.
+        retry_mode (str): Retry mode ('standard', 'adaptive', or 'legacy').
         region_name (str): AWS region name.
 
     Returns:
-        botocore.config.Config: An S3 configuration object.
+        botocore.config.Config: An optimized S3 configuration object.
     """
-    # get the default configuration
-    config = botocore.config.Config()
-
-    # update the configuration with the specified parameters
-    if pool_size is not None:
-        config.max_pool_connections = pool_size
-    if connect_timeout is not None:
-        config.connect_timeout = connect_timeout
-    if read_timeout is not None:
-        config.read_timeout = read_timeout
-    if retry_count is not None:
-        config.retries = {
+    # Create a new configuration with optimized defaults
+    config_dict = {
+        "max_pool_connections": pool_size,
+        "connect_timeout": connect_timeout,
+        "read_timeout": read_timeout,
+        "retries": {
             "max_attempts": retry_count,
-            "mode": "standard",
-        }
+            "mode": retry_mode,
+        },
+    }
+    
     if region_name is not None:
-        config.region_name = region_name
+        config_dict["region_name"] = region_name
+        
+    # Create config from dictionary
+    config = botocore.config.Config(**config_dict)
 
-    # log all details
+    # Log configuration details
     LOGGER.info(
-        "S3 configured with region=%s, pool_size=%s, connect_timeout=%s, read_timeout=%s, retry_count=%s",
+        "S3 configured with region=%s, pool_size=%s, connect_timeout=%s, read_timeout=%s, retry_count=%s, retry_mode=%s",
         region_name,
         pool_size,
         connect_timeout,
         read_timeout,
         retry_count,
+        retry_mode,
     )
 
     return config
@@ -107,42 +109,57 @@ def put_object_bytes(
     bucket: str,
     key: str,
     data: str | bytes,
+    retry_count: int = 3,
+    retry_delay: float = 1.0,
 ) -> bool:
     """
-    Put an object into an S3 bucket.
+    Put an object into an S3 bucket with improved retry logic.
 
     Args:
         client (boto3.client): S3 client.
         bucket (str): Bucket name.
         key (str): Object key.
         data (str | bytes): Object data.
+        retry_count (int): Number of retries on failure.
+        retry_delay (float): Base delay between retries in seconds.
 
     Returns:
-        None
+        bool: Whether the operation succeeded.
     """
     # encode the data if it is a string
     if isinstance(data, str):
         data = data.encode("utf-8")
 
-    # put the object into the bucket
-    try:
-        for _ in range(KL3MDataConfig.default_s3_retry_count):
-            try:
-                # put the object
-                client.put_object(
-                    Bucket=bucket,
-                    Key=key,
-                    Body=data,
-                )
-                LOGGER.info("Put object %s/%s (%d)", bucket, key, len(data))
-                return True
-            except Exception as e:  # pylint: disable=broad-except
-                LOGGER.error("Error putting object: %s", e)
-                time.sleep(1)
-    except Exception as e:  # pylint: disable=broad-except
-        LOGGER.error("Error putting object: %s", e)
-        return False
-
+    # put the object into the bucket with exponential backoff retry
+    for attempt in range(retry_count + 1):
+        try:
+            # put the object
+            client.put_object(
+                Bucket=bucket,
+                Key=key,
+                Body=data,
+            )
+            
+            if attempt > 0:
+                LOGGER.info("Put object %s/%s (%d bytes) after %d retries", 
+                           bucket, key, len(data), attempt)
+            else:
+                LOGGER.info("Put object %s/%s (%d bytes)", bucket, key, len(data))
+                
+            return True
+            
+        except Exception as e:  # pylint: disable=broad-except
+            if attempt < retry_count:
+                # Calculate exponential backoff delay
+                backoff_delay = retry_delay * (2 ** attempt)
+                LOGGER.warning("Error putting object %s/%s: %s. Retrying in %.1f seconds... (%d/%d)", 
+                              bucket, key, e, backoff_delay, attempt + 1, retry_count)
+                time.sleep(backoff_delay)
+            else:
+                LOGGER.error("Error putting object %s/%s after %d retries: %s", 
+                            bucket, key, retry_count, e)
+                return False
+    
     return False
 
 
@@ -177,58 +194,118 @@ def get_object_bytes(
     client: boto3.client,
     bucket: str,
     key: str,
+    retry_count: int = 3,
+    retry_delay: float = 1.0,
 ) -> Optional[bytes]:
     """
-    Get an object from an S3 bucket.
+    Get an object from an S3 bucket with improved retry logic.
 
     Args:
         client (boto3.client): S3 client.
         bucket (str): Bucket name.
         key (str): Object key.
+        retry_count (int): Number of retries on failure.
+        retry_delay (float): Delay between retries in seconds.
 
     Returns:
         bytes: Object data.
     """
-    # get the object from the bucket
-    try:
-        response = client.get_object(
-            Bucket=bucket,
-            Key=key,
-        )
-        data = response["Body"].read()
-        LOGGER.info("Got object %s://%s (%d)", bucket, key, len(data))
-        return data
-    except Exception as e:  # pylint: disable=broad-except
-        LOGGER.error("Error getting object: %s", e)
-        return None
+    # Implement exponential backoff retry
+    for attempt in range(retry_count + 1):
+        try:
+            response = client.get_object(
+                Bucket=bucket,
+                Key=key,
+            )
+            
+            # Stream and read content in chunks if needed
+            data = response["Body"].read()
+            
+            if attempt > 0:
+                LOGGER.info("Got object %s://%s after %d retries (%d bytes)", 
+                           bucket, key, attempt, len(data))
+            else:
+                LOGGER.info("Got object %s://%s (%d bytes)", bucket, key, len(data))
+                
+            return data
+            
+        except client.exceptions.NoSuchKey:
+            # Don't retry if the key doesn't exist
+            LOGGER.error("Object %s://%s does not exist", bucket, key)
+            return None
+            
+        except Exception as e:  # pylint: disable=broad-except
+            if attempt < retry_count:
+                # Calculate exponential backoff delay
+                backoff_delay = retry_delay * (2 ** attempt)
+                LOGGER.warning("Error getting object %s://%s: %s. Retrying in %.1f seconds... (%d/%d)", 
+                              bucket, key, e, backoff_delay, attempt + 1, retry_count)
+                time.sleep(backoff_delay)
+            else:
+                LOGGER.error("Error getting object %s://%s after %d retries: %s", 
+                            bucket, key, retry_count, e)
+                return None
+                
+    return None
 
 
 def check_object_exists(
     client: boto3.client,
     bucket: str,
     key: str,
+    retry_count: int = 2,
+    retry_delay: float = 0.5,
 ) -> bool:
     """
-    Check if an object exists in an S3 bucket.
+    Check if an object exists in an S3 bucket with improved retry logic.
 
     Args:
         client (boto3.client): S3 client.
         bucket (str): Bucket name.
         key (str): Object key.
+        retry_count (int): Number of retries on failure.
+        retry_delay (float): Delay between retries in seconds.
 
     Returns:
         bool: Whether the object exists.
     """
-    # check if the object exists
-    try:
-        client.head_object(
-            Bucket=bucket,
-            Key=key,
-        )
-        return True
-    except Exception as e:  # pylint: disable=broad-except
-        LOGGER.error("Error checking object: %s", e)
-        return False
+    # check if the object exists with retries
+    for attempt in range(retry_count + 1):
+        try:
+            client.head_object(
+                Bucket=bucket,
+                Key=key,
+            )
+            return True
+            
+        except client.exceptions.ClientError as e:
+            # If the error is 404, the object doesn't exist
+            if e.response['Error']['Code'] == '404':
+                return False
+                
+            # For other client errors, retry if we have attempts left
+            if attempt < retry_count:
+                backoff_delay = retry_delay * (2 ** attempt)
+                LOGGER.warning("Error checking if object %s/%s exists: %s. Retrying in %.1f seconds... (%d/%d)",
+                             bucket, key, e, backoff_delay, attempt + 1, retry_count)
+                time.sleep(backoff_delay)
+            else:
+                LOGGER.error("Error checking if object %s/%s exists after %d retries: %s",
+                           bucket, key, retry_count, e)
+                return False
+                
+        except Exception as e:  # pylint: disable=broad-except
+            if attempt < retry_count:
+                backoff_delay = retry_delay * (2 ** attempt)
+                LOGGER.warning("Error checking if object %s/%s exists: %s. Retrying in %.1f seconds... (%d/%d)",
+                             bucket, key, e, backoff_delay, attempt + 1, retry_count)
+                time.sleep(backoff_delay)
+            else:
+                LOGGER.error("Error checking if object %s/%s exists after %d retries: %s",
+                           bucket, key, retry_count, e)
+                return False
+    
+    return False
 
 
 def check_prefix_exists(
@@ -293,14 +370,18 @@ def iter_prefix(
     client: boto3.client,
     bucket: str,
     prefix: str,
+    page_size: int = 1000,
+    max_items: Optional[int] = None,
 ) -> Generator[str, None, None]:
     """
-    Iterate over objects with a prefix in an S3 bucket.
+    Iterate over objects with a prefix in an S3 bucket with optimized pagination.
 
     Args:
         client (boto3.client): S3 client.
         bucket (str): Bucket name.
         prefix (str): Prefix.
+        page_size (int): Number of keys to retrieve per request.
+        max_items (Optional[int]): Maximum number of items to retrieve.
 
     Yields:
         str: Object key.
@@ -308,9 +389,22 @@ def iter_prefix(
     # get the objects with the prefix
     try:
         list_paginator = client.get_paginator("list_objects_v2")
-        list_results = list_paginator.paginate(Bucket=bucket, Prefix=prefix)
+        pagination_config = {
+            "PageSize": page_size,  # Retrieve more keys per request
+        }
+        
+        if max_items:
+            pagination_config["MaxItems"] = max_items
+            
+        list_results = list_paginator.paginate(
+            Bucket=bucket, 
+            Prefix=prefix,
+            PaginationConfig=pagination_config
+        )
+        
         for results in list_results:
             if "Contents" in results:
+                # Process all keys in one batch for better performance
                 for obj in results["Contents"]:
                     yield obj["Key"]
     except Exception as e:  # pylint: disable=broad-except
@@ -318,16 +412,23 @@ def iter_prefix(
 
 
 def iter_prefix_shard(
-    client: boto3.client, bucket: str, prefix: str, shard: str
+    client: boto3.client, 
+    bucket: str, 
+    prefix: str, 
+    shard: str,
+    page_size: int = 1000,
+    max_items: Optional[int] = None
 ) -> Generator[str, None, None]:
     """
-    Iterate over objects with a prefix in an S3 bucket.
+    Iterate over objects with a prefix in an S3 bucket, filtered by shard.
 
     Args:
         client (boto3.client): S3 client.
         bucket (str): Bucket name.
         prefix (str): Prefix.
-        shard (str): Shard prefix to mathc.
+        shard (str): Shard prefix to match.
+        page_size (int): Number of keys to retrieve per request.
+        max_items (Optional[int]): Maximum number of items to retrieve.
 
     Yields:
         str: Object key.
@@ -335,13 +436,31 @@ def iter_prefix_shard(
     # get the objects with the prefix
     try:
         list_paginator = client.get_paginator("list_objects_v2")
-        list_results = list_paginator.paginate(Bucket=bucket, Prefix=prefix)
+        pagination_config = {
+            "PageSize": page_size,  # Retrieve more keys per request
+        }
+        
+        if max_items:
+            pagination_config["MaxItems"] = max_items
+            
+        list_results = list_paginator.paginate(
+            Bucket=bucket, 
+            Prefix=prefix,
+            PaginationConfig=pagination_config
+        )
+        
         for results in list_results:
             if "Contents" in results:
+                # Pre-calculate hashes for the entire batch
+                filtered_keys = []
                 for obj in results["Contents"]:
                     key_hash = hashlib.blake2b(obj["Key"].encode()).hexdigest().lower()
                     if key_hash.startswith(shard):
-                        yield obj["Key"]
+                        filtered_keys.append(obj["Key"])
+                
+                # Yield filtered keys
+                for key in filtered_keys:
+                    yield key
     except Exception as e:  # pylint: disable=broad-except
         LOGGER.error("Error listing prefix: %s", e)
 

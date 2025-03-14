@@ -54,6 +54,9 @@ dependencies = [
 Homepage = "https://aleainstitute.ai/"
 Repository = "https://github.com/alea-institute/kl3m-data"
 
+[project.scripts]
+kl3m-hf = "kl3m_data.cli.hf:main"
+
 [dependency-groups]
 dev = [
     "pytest>=8.3.2,<9",
