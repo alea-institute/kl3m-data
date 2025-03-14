@@ -32,7 +32,7 @@ METRIC_WEIGHTS = {
     "char_entropy": 0.5,
     "max_token_frequency_ratio": 1.0,
     "repetition_rate": 1.5,
-    "ratio_format_tokens": 100.0,
+    "ratio_format_tokens": 12.5,  # Reduced from 100.0 to avoid dominating the score
     "ratio_nospace_bigrams": 3.0,
 }
 
@@ -81,6 +81,7 @@ def score_text(metrics: dict) -> float:
     """
     total_score = 0.0
     eps = 1e-8
+    score_components = {}  # Track individual score components for debugging
 
     for metric, weight in METRIC_WEIGHTS.items():
         if metric not in metrics:
@@ -110,6 +111,16 @@ def score_text(metrics: dict) -> float:
                 raise RuntimeError(
                     f"Component for metric {metric} is {component}, metrics are {metrics}, weights are {METRIC_WEIGHTS}"
                 )
+                
+            # Only record non-zero components to help diagnose scoring issues
+            if component > 0:
+                score_components[metric] = {
+                    "value": value,
+                    "range": (lower, upper),
+                    "weight": weight,
+                    "component": component
+                }
+                
             total_score += component
 
     # if the score is nan or inf, raise runtime error and print all metrics
@@ -117,6 +128,10 @@ def score_text(metrics: dict) -> float:
         raise RuntimeError(
             f"Score is {total_score}, metrics are {metrics}, weights are {METRIC_WEIGHTS}"
         )
+        
+    # Add to metrics to help diagnose scoring issues
+    metrics["_score_components"] = score_components
+    
     return total_score
 
 
@@ -331,8 +346,12 @@ def get_metrics(record: dict) -> dict:
         num_nospace_bigrams = 0
         num_format_tokens = 0
 
-        # Based on original code
+        # Based on updated token IDs for kl3m-003-64k and kl3m-004-128k tokenizers
+        # These may be different from previous tokenizers
         bad_bigram_token_ids = (35464, 67042, 108832)
+        
+        # Add common format tokens that might appear in the new tokenizer
+        # For kl3m-003-64k, this should include tokens like <s>, <pad>, etc.
         bad_format_token_ids = (
             395,
             477,
@@ -346,6 +365,7 @@ def get_metrics(record: dict) -> dict:
             126997,
             127022,
             127034,
+            # Add more if needed after analysis
         )
 
         for i, t in enumerate(tokens):

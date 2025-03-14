@@ -182,7 +182,7 @@ def get_sample_batch(
         pool_size=25,  # Increased connection pool
         connect_timeout=5,
         read_timeout=30,
-        retry_count=3
+        retry_count=3,
     )
 
     # Ensure list of datasets
@@ -194,11 +194,7 @@ def get_sample_batch(
     for dataset in datasets:
         index_path = f"index/{dataset}.json.gz"
         index_bytes = get_object_bytes(
-            s3_client, 
-            "data.kl3m.ai", 
-            index_path,
-            retry_count=3,
-            retry_delay=1.0
+            s3_client, "data.kl3m.ai", index_path, retry_count=3, retry_delay=1.0
         )
         if index_bytes is not None:
             index_data = json.loads(gzip.decompress(index_bytes))
@@ -212,58 +208,60 @@ def get_sample_batch(
         # We might need more objects than limit since some might be filtered out
         # Use a multiplier to ensure we have enough objects
         multiplier = 2  # Adjust based on expected filter rate
-        index_objects = index_objects[:limit * multiplier]
+        index_objects = index_objects[: limit * multiplier]
 
     # Iterate objects in batches for better performance
     total = 0
     total_processed = 0
-    
+
     # Process in batches
     for i in range(0, len(index_objects), batch_size):
-        batch = index_objects[i:i + batch_size]
+        batch = index_objects[i : i + batch_size]
         valid_keys = []
-        
+
         # First filter and check existence in parallel (future optimization: use ThreadPoolExecutor)
         for object_key in batch:
             total_processed += 1
-            
+
             if filter_method and not filter_method(object_key):
                 continue
-                
+
             parquet_key = object_key.replace("representations/", "parquet/")[
                 : -len(".json")
             ]
-            
+
             # Check if parquet file exists with improved check
-            if check_object_exists(s3_client, "data.kl3m.ai", parquet_key, retry_count=2):
+            if check_object_exists(
+                s3_client, "data.kl3m.ai", parquet_key, retry_count=2
+            ):
                 valid_keys.append((parquet_key, object_key))
-        
+
         # Then process valid keys
         for parquet_key, object_key in valid_keys:
             object_dataset = parquet_key.split("/")[1]
-            
+
             try:
                 # Get object with optimized retry logic
                 parquet_bytes = get_object_bytes(
-                    s3_client, 
-                    "data.kl3m.ai", 
+                    s3_client,
+                    "data.kl3m.ai",
                     parquet_key,
                     retry_count=3,
-                    retry_delay=0.5
+                    retry_delay=0.5,
                 )
-                
+
                 if parquet_bytes is None:
                     continue
-                    
+
                 document = deserialize_document_bytes(parquet_bytes)
-                
+
                 # Yield tokens for each mime type
                 for mime_type in document.get("representations", {}):
                     # Exclude edgar uu data
                     if "edgar" in object_dataset:
                         if document["representations"][mime_type][0] == 47842:
                             continue
-                    
+
                     yield {
                         "identifier": document["identifier"],
                         "dataset": object_dataset,
@@ -271,13 +269,13 @@ def get_sample_batch(
                         "tokens": document["representations"][mime_type],
                     }
                     total += 1
-                    
+
                     if limit and total >= limit:
                         return
-                        
+
             except Exception as e:
                 LOGGER.warning(f"Error processing {parquet_key}: {e}")
-                
+
         # If we've reached the limit, stop processing batches
         if limit and total >= limit:
             return
