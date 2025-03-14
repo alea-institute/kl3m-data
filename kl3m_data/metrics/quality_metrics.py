@@ -346,12 +346,12 @@ def get_metrics(record: dict) -> dict:
         num_nospace_bigrams = 0
         num_format_tokens = 0
 
-        # Based on updated token IDs for kl3m-003-64k and kl3m-004-128k tokenizers
-        # These may be different from previous tokenizers
+        # Based on token IDs for kl3m-004-128k-cased tokenizer
+        # These may need adjustment if the tokenizer changes
         bad_bigram_token_ids = (35464, 67042, 108832)
         
-        # Add common format tokens that might appear in the new tokenizer
-        # For kl3m-003-64k, this should include tokens like <s>, <pad>, etc.
+        # Add common format tokens that might appear in the tokenizer
+        # For kl3m-004-128k-cased, this includes special tokens like <s>, <pad>, etc.
         bad_format_token_ids = (
             395,
             477,

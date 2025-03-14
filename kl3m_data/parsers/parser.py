@@ -26,7 +26,7 @@ DEFAULT_FILTERS = [
 
 # default tokenizers
 DEFAULT_TOKENIZERS = [
-    "alea-institute/kl3m-003-64k",
+    "alea-institute/kl3m-004-128k-cased",
 ]
 
 

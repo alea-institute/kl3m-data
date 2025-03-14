@@ -1,24 +1,33 @@
 """
 CLI for end-to-end data processing: parse, convert, score, and upload to Hugging Face.
 Uses multithreading to parallelize document processing in a streamlined pipeline.
+
+This module is configured to use the kl3m-004-128k-cased tokenizer for all processing.
+All metrics and filtering are based on this tokenizer.
 """
 
 # imports
 import argparse
+import base64
 import hashlib
 import json
 import queue
 import threading
 import time
+import traceback
+import zlib
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any, Dict, Generator, List, Optional, Set
+from functools import partial
+from typing import Any, Dict, Generator, List, Optional, Set, Tuple
 
 # packages
-from datasets import Dataset
+from datasets import Dataset  # Base Dataset class
 from huggingface_hub import hf_api
 from huggingface_hub.errors import RepositoryNotFoundError
 from rich.console import Console
 from rich.panel import Panel
+from tokenizers.tokenizers import Tokenizer
 
 # project imports
 from kl3m_data.logger import LOGGER
@@ -30,6 +39,32 @@ from kl3m_data.utils.s3_utils import (
 )
 from kl3m_data.parsers.parser import parse_object
 from kl3m_data.utils.parquet_utils import serialize_document
+
+# Define the tokenizer being used throughout this module
+DEFAULT_TOKENIZER_NAME = "alea-institute/kl3m-004-128k-cased"
+
+# Global tokenizer cache to avoid redundant loading
+_TOKENIZER_CACHE = {}
+_TOKENIZER_CACHE_LOCK = threading.RLock()  # Reentrant lock for thread safety
+
+def get_tokenizer(tokenizer_name: str) -> Tokenizer:
+    """
+    Get a tokenizer instance from cache or create a new one.
+    This function ensures we don't waste resources loading the same tokenizer multiple times.
+    Thread-safe implementation with proper locking.
+    
+    Args:
+        tokenizer_name: Name of the tokenizer to load
+        
+    Returns:
+        Tokenizer instance
+    """
+    with _TOKENIZER_CACHE_LOCK:
+        if tokenizer_name not in _TOKENIZER_CACHE:
+            LOGGER.debug(f"Loading tokenizer {tokenizer_name} into global cache")
+            _TOKENIZER_CACHE[tokenizer_name] = Tokenizer.from_pretrained(tokenizer_name)
+        
+        return _TOKENIZER_CACHE[tokenizer_name]
 
 
 # Utility functions for document processing
@@ -92,33 +127,149 @@ def extract_dataset(doc_dict: Dict[str, Any]) -> str:
     return dataset
 
 
-def extract_tokens(doc_dict: Dict[str, Any]) -> List[int]:
+def decompress_content(content_data: str) -> str:
+    """
+    Decompress and decode content data from base64+zlib format.
+    This function is intended to be used with a thread pool for parallel processing.
+    
+    Args:
+        content_data: Base64 encoded, zlib compressed content string
+        
+    Returns:
+        Decompressed and decoded content as string, or empty string on error
+    """
+    try:
+        return zlib.decompress(base64.b64decode(content_data)).decode('utf-8')
+    except Exception as e:
+        # Just return empty string on error - errors will be handled by caller
+        return ""
+
+
+def process_documents_batch(docs: List[Dict], tokenizer: Tokenizer, max_workers: int = 4) -> List[Tuple[Dict, List[int]]]:
+    """
+    Process a batch of documents in parallel, extracting tokens for each.
+    This is useful when working with multiple documents that can be processed independently.
+    
+    Args:
+        docs: List of document dictionaries to process
+        tokenizer: Tokenizer to use for encoding
+        max_workers: Maximum number of worker threads to use
+        
+    Returns:
+        List of tuples containing (document, tokens) pairs
+    """
+    if not docs:
+        return []
+    
+    # Define worker function that processes a single document
+    def process_doc(doc):
+        return (doc, extract_tokens(doc, tokenizer))
+    
+    # Use thread pool to process documents in parallel
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        return list(executor.map(process_doc, docs))
+
+def extract_tokens(doc_dict: Dict[str, Any], output_tokenizer: Tokenizer) -> List[int]:
     """
     Extract tokens from document dictionary, checking all possible locations.
+    Tokens should be from the DEFAULT_TOKENIZER_NAME (kl3m-004-128k-cased).
+    Uses parallel processing for content decompression when multiple representations exist.
 
     Args:
         doc_dict: Document dictionary
+        output_tokenizer: Tokenizer instance to use for encoding tokens from content
 
     Returns:
-        List of token IDs, or empty list if none found
+        List of token IDs from kl3m-004-128k-cased tokenizer, or empty list if none found
     """
     tokens = []
 
-    # Check for tokens in representations
+    # First check for pre-existing tokens in the right format
     if "representations" in doc_dict:
         for rep_type, rep_data in doc_dict.get("representations", {}).items():
             if "tokens" in rep_data:
-                # If tokens is a dict with model names as keys, get the first available model's tokens
+                # If tokens is a dict with model names as keys, find tokens for our model
                 if isinstance(rep_data["tokens"], dict):
+                    model_name = DEFAULT_TOKENIZER_NAME.split("/")[-1]
+                    # Look for exact model name match first
+                    if model_name in rep_data["tokens"]:
+                        return rep_data["tokens"][model_name]
+                    # Otherwise take the first available model's tokens
                     for model_tokens in rep_data["tokens"].values():
                         tokens = model_tokens
                         break
                 else:
                     tokens = rep_data["tokens"]
-
-                # If we found tokens, stop looking
+                
+                # If we found tokens, return them immediately
                 if tokens:
-                    break
+                    return tokens
+    
+    # If we didn't find pre-existing tokens, try to generate tokens from content
+    if not tokens and "representations" in doc_dict:
+        # Collect all representation content for parallel processing
+        content_tasks = []
+        rep_types = []
+        
+        for rep_type, rep_data in doc_dict.get("representations", {}).items():
+            # Skip if no content available
+            if "content" not in rep_data:
+                continue
+                
+            # Add to parallel processing queue - store rep_type for later identification
+            content_tasks.append(rep_data.get("content", ""))
+            rep_types.append(rep_type)
+        
+        # If we have content to process, use parallel decompression
+        if content_tasks:
+            # Create a thread pool with max(5, number of representations) workers 
+            # Small pool avoids too many threads for few representations
+            # but allows parallelism for docs with many representations
+            with ThreadPoolExecutor(max_workers=max(5, len(content_tasks))) as executor:
+                # Process all content in parallel
+                decoded_contents = list(executor.map(decompress_content, content_tasks))
+                
+                # Process the results in order
+                for i, content in enumerate(decoded_contents):
+                    rep_type = rep_types[i]
+                    
+                    # Skip empty content (decompression failed)
+                    if not content:
+                        continue
+                    
+                    try:
+                        # Optimize tokenization for larger documents (>100KB) using batching
+                        content_size = len(content)
+                        if content_size > 100000:  # 100KB threshold
+                            # Batch tokenization for large content
+                            LOGGER.debug(f"Using batch tokenization for large content ({content_size/1024:.1f}KB)")
+                            # Split into chunks of ~50KB to avoid tokenizer limits
+                            chunk_size = 50000
+                            chunks = [content[i:i+chunk_size] for i in range(0, content_size, chunk_size)]
+                            
+                            # Use parallel tokenization for chunks
+                            def encode_chunk(text_chunk):
+                                return output_tokenizer.encode(text_chunk).ids
+                                
+                            # Process chunks in parallel with another thread pool
+                            with ThreadPoolExecutor(max_workers=min(8, len(chunks))) as chunk_executor:
+                                chunk_tokens_list = list(chunk_executor.map(encode_chunk, chunks))
+                                
+                            # Combine all token lists in order
+                            all_tokens = []
+                            for chunk_tokens in chunk_tokens_list:
+                                all_tokens.extend(chunk_tokens)
+                            tokens = all_tokens
+                        else:
+                            # Standard tokenization for smaller content
+                            tokens = output_tokenizer.encode(content).ids
+                        
+                        # If tokenization was successful, return immediately
+                        if tokens:
+                            return tokens
+                    except Exception as e:
+                        LOGGER.debug(f"Failed to tokenize content from {rep_type}: {e}")
+                        continue
 
     # Fall back to top-level tokens if available and we haven't found any yet
     if not tokens and "tokens" in doc_dict:
@@ -181,6 +332,12 @@ def process_and_upload(
         queue_size: Size of the queue for communication between threads
     """
     console = Console()
+    
+    # Preload tokenizer in the main thread to warm up the cache
+    # This ensures the first thread doesn't have to wait for loading
+    LOGGER.info(f"Preloading tokenizer: {DEFAULT_TOKENIZER_NAME}")
+    get_tokenizer(DEFAULT_TOKENIZER_NAME)
+    
     # Create optimized S3 client config
     s3_config = get_s3_config(
         pool_size=max(
@@ -249,6 +406,19 @@ def process_and_upload(
             "large": 0,
             "serialize_error": 0,
         },
+        "score_stats": {
+            "sum_included": 0.0,  # Sum of scores for included documents
+            "sum_excluded": 0.0,  # Sum of scores for excluded documents by threshold 
+            "count_included": 0,  # Count of documents with scores (included)
+            "count_excluded": 0,  # Count of documents with scores (excluded by threshold)
+        },
+        "score_bins": {  # Track score distribution in bins
+            "0-1": 0,
+            "1-2": 0,
+            "2-5": 0,
+            "5-10": 0,
+            "10+": 0
+        }
     }
 
     # Deduplication set with lock
@@ -311,6 +481,10 @@ def process_and_upload(
             retry_mode="adaptive",
         )
         local_s3_client = get_s3_client(config=local_s3_config)
+        
+        # Get tokenizer from cache for better efficiency
+        # This avoids redundant tokenizer loading across threads
+        local_tokenizer = get_tokenizer(DEFAULT_TOKENIZER_NAME)
 
         while not stop_event.is_set():
             try:
@@ -361,15 +535,39 @@ def process_and_upload(
                         stats["documents_parsed"] += len(successful_docs)
 
                     # STEP 2: Process each document fully (convert to parquet and score)
-                    for doc in successful_docs:
+                    # Skip processing if stop event is set
+                    if stop_event.is_set():
+                        continue
+                        
+                    # Convert all documents to dictionaries for processing
+                    doc_dicts = [doc.to_json_dict() for doc in successful_docs]
+                    
+                    # Use bulk parallel processing if we have enough documents
+                    if len(doc_dicts) >= 4:
+                        # Process documents in parallel batches
+                        # Use max_workers based on number of documents, but cap at 8
+                        max_workers = min(8, len(doc_dicts))
+                        LOGGER.debug(f"Processing {len(doc_dicts)} documents in parallel with {max_workers} workers")
+                        
+                        # Process all documents in parallel, getting (doc_dict, tokens) pairs
+                        processed_docs = process_documents_batch(doc_dicts, local_tokenizer, max_workers)
+                        
+                        # Continue processing each document with their extracted tokens
+                        for doc_dict, tokens in processed_docs:
+                            # Skip if stop event is set
+                            if stop_event.is_set():
+                                break
+                    else:
+                        # For small numbers of documents, process serially
+                        LOGGER.debug(f"Processing {len(doc_dicts)} documents serially")
+                        processed_docs = [(doc_dict, extract_tokens(doc_dict, local_tokenizer)) 
+                                         for doc_dict in doc_dicts]
+                        
+                    # Continue with the rest of processing for each document
+                    for doc_dict, tokens in processed_docs:
                         # Skip if stop event is set
                         if stop_event.is_set():
                             break
-
-                        doc_dict = doc.to_json_dict()
-
-                        # Extract tokens using helper function
-                        tokens = extract_tokens(doc_dict)
 
                         if not tokens:
                             with stats_lock:
@@ -497,9 +695,23 @@ def process_and_upload(
                                 # Add to seen hashes
                                 seen_hashes.add(token_hash)
 
-                            # Track inclusion
+                            # Track inclusion and score stats
                             with stats_lock:
                                 stats["documents_included"] += 1
+                                stats["score_stats"]["sum_included"] += score
+                                stats["score_stats"]["count_included"] += 1
+                                
+                                # Update score bins
+                                if score <= 1.0:
+                                    stats["score_bins"]["0-1"] += 1
+                                elif score <= 2.0:
+                                    stats["score_bins"]["1-2"] += 1
+                                elif score <= 5.0:
+                                    stats["score_bins"]["2-5"] += 1
+                                elif score <= 10.0:
+                                    stats["score_bins"]["5-10"] += 1
+                                else:
+                                    stats["score_bins"]["10+"] += 1
 
                             # Extract mime_type and dataset using helper functions
                             mime_type = extract_mime_type(doc_dict)
@@ -517,6 +729,20 @@ def process_and_upload(
                         else:
                             with stats_lock:
                                 stats["documents_excluded"]["filter_score"] += 1
+                                stats["score_stats"]["sum_excluded"] += score
+                                stats["score_stats"]["count_excluded"] += 1
+                                
+                                # Update score bins even for excluded docs
+                                if score <= 1.0:
+                                    stats["score_bins"]["0-1"] += 1
+                                elif score <= 2.0:
+                                    stats["score_bins"]["1-2"] += 1
+                                elif score <= 5.0:
+                                    stats["score_bins"]["2-5"] += 1
+                                elif score <= 10.0:
+                                    stats["score_bins"]["5-10"] += 1
+                                else:
+                                    stats["score_bins"]["10+"] += 1
 
                             # Log that the document was excluded due to score
                             identifier = doc_dict.get("identifier", "unknown")
@@ -536,6 +762,8 @@ def process_and_upload(
                     s3_obj.error_message = str(e)
                     error_type = type(e).__name__
                     LOGGER.error(f"Error ({error_type}) processing {s3_obj.key}: {e}")
+                    traceback.print_exc()
+                    raise e
 
                 # Update processed objects count
                 with stats_lock:
@@ -595,11 +823,17 @@ def process_and_upload(
                         ]
                     )
 
+                    # Calculate current average scores
+                    avg_score_msg = ""
+                    if current_stats["score_stats"]["count_included"] > 0:
+                        avg_included = current_stats["score_stats"]["sum_included"] / current_stats["score_stats"]["count_included"]
+                        avg_score_msg = f" | Avg score: {avg_included:.4f}"
+                    
                     result_queue.put(
                         f"Progress: {current_stats['objects_processed']}/{current_stats['total_objects']} objects | "
                         f"Parsed: {current_stats['documents_parsed']} docs | "
                         f"Included: {current_stats['documents_included']} | "
-                        f"Excluded: {excluded_total} ({excluded_breakdown}) | "
+                        f"Excluded: {excluded_total} ({excluded_breakdown}){avg_score_msg} | "
                         f"Queue: {obj_queue_size}/{scored_queue_size}"
                     )
 
@@ -789,13 +1023,20 @@ def process_and_upload(
             # Create and upload the dataset with our clean generator
             console.print("[cyan]Creating HuggingFace dataset...[/cyan]")
             try:
+                # Import here to avoid circular imports
+                from datasets import Dataset, Sequence, Value
+                
                 dataset = Dataset.from_generator(yield_scored_documents)
+                
+                # Add tokenizer info to dataset metadata
+                dataset = dataset.cast_column("tokens", Sequence(Value("int32")))
+
                 console.print(
                     f"[cyan]Pushing dataset to HuggingFace as {output_name}...[/cyan]"
                 )
                 dataset.push_to_hub(output_name)
                 LOGGER.info(
-                    f"Successfully pushed dataset to HuggingFace as {output_name}"
+                    f"Successfully pushed dataset to HuggingFace as {output_name} using tokenizer: {DEFAULT_TOKENIZER_NAME}"
                 )
             except Exception as e:
                 LOGGER.error(f"Failed to create or upload dataset to HuggingFace: {e}")
@@ -880,6 +1121,24 @@ def process_and_upload(
                 console.print(
                     f"[green]  - Duplicates: {final_stats['documents_excluded']['duplicate']}[/green]"
                 )
+                
+                # Calculate and display average scores
+                if final_stats["score_stats"]["count_included"] > 0:
+                    avg_included = final_stats["score_stats"]["sum_included"] / final_stats["score_stats"]["count_included"]
+                    console.print(f"[green]- Average score (included documents): {avg_included:.4f}[/green]")
+                
+                if final_stats["score_stats"]["count_excluded"] > 0:
+                    avg_excluded = final_stats["score_stats"]["sum_excluded"] / final_stats["score_stats"]["count_excluded"]
+                    console.print(f"[green]- Average score (excluded documents): {avg_excluded:.4f}[/green]")
+                
+                # Display score distribution
+                total_scored = sum(final_stats["score_bins"].values())
+                if total_scored > 0:
+                    console.print(f"[green]- Score distribution:[/green]")
+                    for bin_name, count in final_stats["score_bins"].items():
+                        if count > 0:
+                            percentage = round(count / total_scored * 100, 1)
+                            console.print(f"[green]  - {bin_name}: {count} ({percentage}%)[/green]")
             else:
                 console.print(
                     f"[green]- Documents included: {final_stats['documents_included']}[/green]"
@@ -888,6 +1147,9 @@ def process_and_upload(
 
             console.print(
                 f"[bold green]Upload completed! Dataset available at: https://huggingface.co/datasets/{output_name}[/bold green]"
+            )
+            console.print(
+                f"[green]Dataset uses tokenizer: {DEFAULT_TOKENIZER_NAME}[/green]"
             )
 
     except KeyboardInterrupt:
@@ -943,19 +1205,19 @@ def main() -> None:
     parser.add_argument(
         "--producer-threads",
         type=int,
-        default=4,
+        default=8,
         help="Number of threads for retrieving S3 objects (default: 4)",
     )
     parser.add_argument(
         "--consumer-threads",
         type=int,
-        default=4,
+        default=16,
         help="Number of threads for processing documents (default: 4)",
     )
     parser.add_argument(
         "--queue-size",
         type=int,
-        default=200,
+        default=1000,
         help="Size of queue for communication between threads (default: 200)",
     )
 
