@@ -1,5 +1,6 @@
 """
 CLI for end-to-end data processing: parse, convert, score, and upload to Hugging Face.
+Uses multithreading to parallelize document processing in a streamlined pipeline.
 """
 
 # imports
@@ -7,9 +8,13 @@ import argparse
 import hashlib
 import json
 import os
+import queue
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional, Dict, Generator
+from typing import Any, Dict, Generator, List, Optional, Tuple, Set
 
 # packages
 from datasets import Dataset
@@ -18,22 +23,39 @@ from huggingface_hub.errors import RepositoryNotFoundError
 from rich import print as rprint
 from rich.console import Console
 from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn
 
 # project imports
 from kl3m_data.logger import LOGGER
 from kl3m_data.metrics.quality_metrics import get_metrics
 from kl3m_data.cli.parsers import get_output_key
-from kl3m_data.cli.parquet import get_sample_batch
 from kl3m_data.utils.s3_utils import (
     get_s3_client,
+    get_s3_config,
     check_object_exists,
     iter_prefix,
     iter_prefix_shard,
-    put_object_bytes,
     get_object_bytes
 )
 from kl3m_data.parsers.parser import parse_object
 from kl3m_data.utils.parquet_utils import serialize_document
+
+# Define data structures for thread communication
+@dataclass
+class S3Object:
+    """Class for tracking S3 object details."""
+    key: str
+    status: str = "pending"  # pending, processed, skipped, failed
+    error_message: str = ""
+
+@dataclass
+class ProcessedDocument:
+    """Class for tracking processed document details."""
+    identifier: str
+    dataset: str
+    mime_type: str
+    score: float
+    tokens: List[int]
 
 
 def process_and_upload(
@@ -45,9 +67,14 @@ def process_and_upload(
     clobber: bool = False,
     max_size: int = 8,
     num_hash_tokens: int = 1024,
+    num_producer_threads: int = 4,
+    num_consumer_threads: int = 8,
+    queue_size: int = 1000,
+    all_documents: bool = False,
 ) -> None:
     """
-    End-to-end process: parse, convert, score and upload to Hugging Face.
+    End-to-end process: parse, convert, score and upload to Hugging Face using multithreading.
+    Streamlined pipeline that processes each document fully before moving to the next.
 
     Args:
         dataset_id: Dataset ID to process
@@ -58,9 +85,20 @@ def process_and_upload(
         clobber: Whether to overwrite existing files
         max_size: Maximum file size in MB to process
         num_hash_tokens: Number of tokens to hash for deduplication
+        num_producer_threads: Number of threads to use for S3 object retrieval
+        num_consumer_threads: Number of threads to use for document processing
+        queue_size: Size of the queue for communication between threads
     """
     console = Console()
-    s3_client = get_s3_client()
+    # Create optimized S3 client config
+    s3_config = get_s3_config(
+        pool_size=max(32, num_producer_threads * 4),  # Ensure enough connections for multiple threads
+        connect_timeout=10,
+        read_timeout=60,
+        retry_count=3,
+        retry_mode="adaptive"
+    )
+    s3_client = get_s3_client(config=s3_config)
     
     # Check if output dataset already exists
     try:
@@ -72,290 +110,496 @@ def process_and_upload(
         # Need to create for the first time
         pass
     
-    # 1. Parse documents
-    console.print(Panel(f"[bold blue]Step 1/3: Parsing documents from {dataset_id}...[/bold blue]"))
-    
-    # Use direct function call instead of running parse_serial
-    # This avoids nested progress bars
     bytes_to_mb = 1024 * 1024
     max_size_bytes = max_size * bytes_to_mb
     
-    # Manual implementation to avoid nested progress bars
-    # Get dataset paths
-    if dataset_id:
-        dataset_paths = [f"documents/{dataset_id}/"]
-    else:
-        dataset_paths = ["documents/"]
-        
-    # Process dataset paths
-    good, bad, new = 0, 0, 0
-    objects_processed = 0
+    # =========================================================================
+    # Single end-to-end pipeline: Parse → Convert → Score → Upload
+    # =========================================================================
+    console.print(Panel(f"[bold blue]Processing documents from {dataset_id} for HuggingFace upload...[/bold blue]"))
     
-    for dataset_path in dataset_paths:
-        console.print(f"Processing {dataset_path}")
-        
-        # Get iterator based on shard prefix and key prefix
-        if key_prefix:
-            full_dataset_path = dataset_path.rstrip("/") + "/" + key_prefix
-        else:
-            full_dataset_path = dataset_path
-        
-        # Get objects iterator with optimized parameters
-        console.print(f"Listing objects with prefix: {full_dataset_path}")
-        objects = iter_prefix(
-            s3_client, 
-            "data.kl3m.ai", 
-            full_dataset_path,
-            page_size=1000  # Get more objects per request
-        )
-        
-        # Process objects
-        for object_key in objects:
-            objects_processed += 1
-            
-            # Print status update periodically
-            if objects_processed % 100 == 0:
-                console.print(f"Progress: {objects_processed} objects, good={good}, bad={bad}, new={new}")
-            
-            # Get output key and check if it exists
-            output_key = get_output_key(object_key)
-            if not clobber:
-                if check_object_exists(s3_client, "data.kl3m.ai", output_key):
-                    LOGGER.info("Output key already exists: %s", output_key)
-                    good += 1
-                    continue
-                    
-            # Parse the object
-            try:
-                parsed_docs = parse_object(s3_client, "data.kl3m.ai", object_key, max_size=max_size_bytes)
-                output_docs = []
-                for doc in parsed_docs:
-                    if doc.success:
-                        good += 1
-                        new += 1
-                        output_docs.append(doc.to_json_dict())
-                    else:
-                        bad += 1
-                
-                if len(output_docs) > 0:
-                    # Use optimized put_object_bytes with explicit retries
-                    put_object_bytes(
-                        s3_client,
-                        "data.kl3m.ai",
-                        output_key,
-                        json.dumps({"documents": output_docs}).encode("utf-8"),
-                        retry_count=3,
-                        retry_delay=1.0
-                    )
-            
-            except Exception as e:
-                LOGGER.error("Error processing object key=%s: %s", object_key, e)
-                bad += 1
-                
-    console.print(f"[green]Parsing completed: good={good} bad={bad} new={new}[/green]")
+    # Log key configuration parameters to help with debugging
+    LOGGER.info(f"Processing dataset: {dataset_id}")
+    LOGGER.info(f"Quality score threshold: {score_threshold}")
+    LOGGER.info(f"Maximum document size: {max_size} MB")
+    LOGGER.info(f"Number of hash tokens for deduplication: {num_hash_tokens}")
+    LOGGER.info(f"Using {num_producer_threads} producer thread(s) and {num_consumer_threads} consumer thread(s)")
     
-    # 2. Convert to parquet
-    console.print(Panel(f"[bold blue]Step 2/3: Converting documents to parquet...[/bold blue]"))
+    # Create shared objects for thread communication
+    object_queue = queue.Queue(maxsize=queue_size)
+    scored_doc_queue = queue.Queue(maxsize=queue_size)
+    result_queue = queue.Queue()
+    stop_event = threading.Event()
     
-    # Setup paths
-    representation_path = f"representations/{dataset_id}/"
-    parquet_path = f"parquet/{dataset_id}/"
-    
-    # Convert files
-    converted = 0
-    skipped = 0
-    failed = 0
-    
-    # Use optimized iterator
-    path_iterator = iter_prefix(
-        s3_client, 
-        "data.kl3m.ai", 
-        representation_path,
-        page_size=1000  # Get more objects per request
-    )
-    
-    # Process conversions with less verbosity
-    i = 0
-    update_interval = 25  # Show updates less frequently
-    
-    for object_key in path_iterator:
-        i += 1
-        
-        # Print status updates periodically
-        if i % update_interval == 0:
-            console.print(f"Conversion progress: {i} objects, converted={converted}, skipped={skipped}, failed={failed}")
-        
-        # Get parquet key
-        parquet_key = object_key.replace(representation_path, parquet_path)[
-            : -len(".json")
-        ]
-        
-        # Check if already exists with improved check_object_exists
-        if not clobber:
-            if check_object_exists(s3_client, "data.kl3m.ai", parquet_key, retry_count=2):
-                skipped += 1
-                continue
-                
-        # Get representation data with improved get_object_bytes
-        try:
-            representation_buffer = get_object_bytes(
-                s3_client, 
-                "data.kl3m.ai", 
-                object_key,
-                retry_count=3,
-                retry_delay=0.5
-            )
-            
-            if representation_buffer is None or len(representation_buffer) > max_size_bytes:
-                skipped += 1
-                continue
-                
-            representation_data = json.loads(representation_buffer)
-            documents = representation_data.get("documents", [])
-            
-            if len(documents) < 1:
-                skipped += 1
-                continue
-                
-            # Convert to parquet
-            parquet_bytes = serialize_document(documents[0])
-            if parquet_bytes is None:
-                failed += 1
-                continue
-                
-            # Upload parquet file with improved put_object_bytes
-            put_object_bytes(
-                s3_client, 
-                "data.kl3m.ai", 
-                parquet_key, 
-                parquet_bytes,
-                retry_count=3,
-                retry_delay=1.0
-            )
-            
-            converted += 1
-            
-        except Exception as e:
-            failed += 1
-            # Only log every few errors to reduce output volume
-            if i % update_interval == 0:
-                console.print(f"Error converting object: {e}")
-    
-    console.print(f"[green]Conversion completed: converted={converted} skipped={skipped} failed={failed}[/green]")
-    
-    # 3. Score and upload to HuggingFace
-    console.print(Panel(f"[bold blue]Step 3/3: Scoring and uploading to HuggingFace as {output_name}...[/bold blue]"))
-    
-    # Define generator function for Dataset creation with scoring
-    def yield_scored_documents() -> Generator[Dict[str, Any], None, None]:
-        """Yield documents that pass quality filtering with optimized performance."""
-        count = 0
-        stats = {
-            "included": 0,
-            "excluded_score": 0,
-            "excluded_empty": 0,
-            "excluded_duplicate": 0,
+    # Stats counters (protected by lock)
+    stats_lock = threading.Lock()
+    stats = {
+        "total_objects": 0,
+        "objects_processed": 0,
+        "objects_skipped": 0,
+        "objects_failed": 0,
+        "documents_parsed": 0,
+        "documents_converted": 0,
+        "documents_scored": 0,
+        "documents_included": 0,
+        "documents_excluded": {
+            "score": 0,
+            "empty": 0,
+            "duplicate": 0,
+            "large": 0,
+            "serialize_error": 0
         }
-        seen_hashes = set()
+    }
+    
+    # Deduplication set with lock
+    seen_hashes: Set[str] = set()
+    seen_hashes_lock = threading.Lock()
+    
+    # Define producer function - lists and enqueues S3 objects
+    def producer_fn():
+        try:
+            if dataset_id:
+                dataset_paths = [f"documents/{dataset_id}/"]
+            else:
+                dataset_paths = ["documents/"]
+                
+            for dataset_path in dataset_paths:
+                # Get iterator based on prefix
+                if key_prefix:
+                    full_dataset_path = dataset_path.rstrip("/") + "/" + key_prefix
+                else:
+                    full_dataset_path = dataset_path
+                
+                # Get objects iterator with optimized parameters
+                objects = iter_prefix(
+                    s3_client, 
+                    "data.kl3m.ai", 
+                    full_dataset_path,
+                    page_size=100  # Smaller batch size for better parallelism
+                )
+                
+                # Enqueue objects for processing
+                for object_key in objects:
+                    if stop_event.is_set():
+                        break
+                        
+                    # Create and enqueue object
+                    s3_obj = S3Object(key=object_key)
+                    object_queue.put(s3_obj)
+                    
+                    # Update stats
+                    with stats_lock:
+                        stats["total_objects"] += 1
+                        
+                        # Print progress update periodically
+                        if stats["total_objects"] % 100 == 0:
+                            result_queue.put(f"Listed {stats['total_objects']} objects")
+        except Exception as e:
+            result_queue.put(f"Producer error: {e}")
+        finally:
+            # Signal end of production
+            object_queue.put(None)
+    
+    # Define end-to-end consumer function - processes S3 objects from retrieval to ready-for-upload
+    def end_to_end_consumer_fn():
+        # Create optimized local S3 client
+        local_s3_config = get_s3_config(
+            pool_size=10,
+            connect_timeout=10,
+            read_timeout=60,
+            retry_count=3,
+            retry_mode="adaptive"
+        )
+        local_s3_client = get_s3_client(config=local_s3_config)
         
-        # Progress update interval (higher = less verbose)
-        update_interval = 500
-        
-        console.print(f"Starting document processing with score threshold {score_threshold}")
-        
-        # Use optimized batch size and batch processing
-        for doc in get_sample_batch(
-            datasets=dataset_id,
-            limit=limit,
-            shuffle=True,
-            batch_size=200  # Process more documents per batch
-        ):
-            count += 1
-            
-            # Skip empty documents
-            tokens = doc.get("tokens", [])
-            if len(tokens) == 0:
-                stats["excluded_empty"] += 1
+        while not stop_event.is_set():
+            try:
+                # Get object from queue with timeout
+                s3_obj = object_queue.get(timeout=1.0)
+                
+                # Check for end of queue
+                if s3_obj is None:
+                    # Re-add None for other consumers and exit
+                    object_queue.put(None)
+                    break
+                
+                # STEP 1: Parse the object
+                try:
+                    parsed_docs = parse_object(local_s3_client, "data.kl3m.ai", s3_obj.key, max_size=max_size_bytes)
+                    
+                    # If no successful docs were parsed, skip to next object
+                    successful_docs = [doc for doc in parsed_docs if doc.success]
+                    if not successful_docs:
+                        with stats_lock:
+                            stats["objects_skipped"] += 1
+                            stats["objects_processed"] += 1
+                        LOGGER.info(f"No successful documents parsed from {s3_obj.key}, skipping")
+                        s3_obj.status = "no_successful_docs"
+                        object_queue.task_done()
+                        continue
+                    
+                    # Update parsing stats
+                    with stats_lock:
+                        stats["documents_parsed"] += len(successful_docs)
+                    
+                    # STEP 2: Process each document fully (convert to parquet and score)
+                    for doc in successful_docs:
+                        # Skip if stop event is set
+                        if stop_event.is_set():
+                            break
+                            
+                        doc_dict = doc.to_json_dict()
+                        
+                        # Check if document has tokens
+                        tokens = doc_dict.get("tokens", [])
+                        if not tokens:
+                            with stats_lock:
+                                stats["documents_excluded"]["empty"] += 1
+                            LOGGER.info(f"Empty document (no tokens), skipping: {doc_dict.get('identifier', 'unknown')}")
+                            continue
+                        
+                        # Check document size
+                        if len(json.dumps(doc_dict).encode('utf-8')) > max_size_bytes:
+                            with stats_lock:
+                                stats["documents_excluded"]["large"] += 1
+                            LOGGER.info(f"Document too large, skipping: {doc_dict.get('identifier', 'unknown')}")
+                            continue
+                        
+                        # STEP 3: Convert to parquet format
+                        try:
+                            # We don't need to save the parquet bytes, just verify the document can be serialized
+                            parquet_bytes = serialize_document(doc_dict)
+                            if parquet_bytes is None:
+                                with stats_lock:
+                                    stats["documents_excluded"]["serialize_error"] += 1
+                                LOGGER.warning(f"Parquet serialization failed for {doc_dict.get('identifier', 'unknown')}")
+                                continue
+                            
+                            # Update conversion stats
+                            with stats_lock:
+                                stats["documents_converted"] += 1
+                                
+                        except Exception as e:
+                            with stats_lock:
+                                stats["documents_excluded"]["serialize_error"] += 1
+                            LOGGER.error(f"Error serializing document {doc_dict.get('identifier', 'unknown')}: {e}")
+                            continue
+                        
+                        # STEP 4: Score the document
+                        try:
+                            metrics = get_metrics(doc_dict)
+                            score = metrics.get("score", float('inf'))
+                            
+                            # Update scoring stats
+                            with stats_lock:
+                                stats["documents_scored"] += 1
+                            
+                            # Log details about the score for debugging
+                            identifier = doc_dict.get("identifier", "unknown")
+                            LOGGER.debug(f"Document {identifier} scored {score:.2f} (threshold: {score_threshold})")
+                            if "metrics" in metrics:
+                                for metric_name, metric_value in metrics.get("metrics", {}).items():
+                                    LOGGER.debug(f"  - {metric_name}: {metric_value}")
+                                
+                        except Exception as e:
+                            with stats_lock:
+                                stats["documents_excluded"]["score"] += 1
+                            LOGGER.error(f"Error scoring document {doc_dict.get('identifier', 'unknown')}: {e}")
+                            continue
+                        
+                        # Check the score against threshold
+                        # If all_documents flag is true, we'll set a very high threshold effectively including all documents
+                        effective_threshold = float('inf') if all_documents else score_threshold
+                        if score <= effective_threshold:
+                            # Optimize hashing by using a smaller portion of tokens for very large docs
+                            hash_size = min(num_hash_tokens, len(tokens))
+                            tokens_to_hash = tokens[0:hash_size]
+                            
+                            # Create token hash for deduplication
+                            token_hash = hashlib.blake2b(
+                                ",".join(map(str, tokens_to_hash)).encode(),
+                                digest_size=16,
+                            ).hexdigest()
+                            
+                            # Check for duplicates (thread-safe)
+                            with seen_hashes_lock:
+                                if token_hash in seen_hashes:
+                                    with stats_lock:
+                                        stats["documents_excluded"]["duplicate"] += 1
+                                    
+                                    identifier = doc_dict.get("identifier", "unknown")
+                                    dataset = doc_dict.get("dataset", "unknown")
+                                    LOGGER.info(f"Duplicate document based on token hash, skipping: {identifier} ({dataset})")
+                                    continue
+                                
+                                # Add to seen hashes
+                                seen_hashes.add(token_hash)
+                            
+                            # Track inclusion
+                            with stats_lock:
+                                stats["documents_included"] += 1
+                            
+                            # Create processed document and put in scored queue
+                            scored_doc = {
+                                "identifier": doc_dict.get("identifier"),
+                                "dataset": doc_dict.get("dataset"),
+                                "mime_type": doc_dict.get("mime_type"),
+                                "score": score,
+                                "tokens": tokens
+                            }
+                            scored_doc_queue.put(scored_doc)
+                        else:
+                            with stats_lock:
+                                stats["documents_excluded"]["score"] += 1
+                            
+                            # Log that the document was excluded due to score
+                            identifier = doc_dict.get("identifier", "unknown")
+                            dataset = doc_dict.get("dataset", "unknown")
+                            mime_type = doc_dict.get("mime_type", "unknown")
+                            LOGGER.info(f"Document score {score:.2f} > threshold {score_threshold}, skipping: {identifier} ({dataset}, {mime_type})")
+                    
+                    # Mark object as successfully processed
+                    s3_obj.status = "processed"
+                    
+                except Exception as e:
+                    with stats_lock:
+                        stats["objects_failed"] += 1
+                    s3_obj.status = "failed"
+                    s3_obj.error_message = str(e)
+                    error_type = type(e).__name__
+                    LOGGER.error(f"Error ({error_type}) processing {s3_obj.key}: {e}")
+                
+                # Update processed objects count
+                with stats_lock:
+                    stats["objects_processed"] += 1
+                
+                # Mark task as done
+                object_queue.task_done()
+                
+            except queue.Empty:
+                # Queue timeout, check if we should continue
                 continue
-            
-            # Apply quality metrics
-            metrics = get_metrics(doc)
-            score = metrics.get("score", float('inf'))
-            
-            # Only include documents with score below threshold
-            if score <= score_threshold:
-                # Optimize hashing by using a smaller portion of tokens for very large docs
-                hash_size = min(num_hash_tokens, len(tokens))
-                tokens_to_hash = tokens[0:hash_size]
+            except Exception as e:
+                result_queue.put(f"Consumer error: {e}")
+                continue
+    
+    # Define progress monitor function
+    def monitor_fn():
+        update_interval = 3.0  # seconds
+        last_counts = {"objects": 0, "included": 0}
+        
+        try:
+            while not stop_event.is_set():
+                time.sleep(update_interval)
                 
-                # Optimize hash creation
-                token_hash = hashlib.blake2b(
-                    ",".join(map(str, tokens_to_hash)).encode(),
-                    digest_size=16,
-                ).hexdigest()
+                with stats_lock:
+                    current_stats = stats.copy()
                 
-                # Skip duplicates
-                if token_hash in seen_hashes:
-                    stats["excluded_duplicate"] += 1
+                # Only update if there's been progress
+                if (current_stats["objects_processed"] > last_counts["objects"] or 
+                    current_stats["documents_included"] > last_counts["included"]):
+                    
+                    last_counts["objects"] = current_stats["objects_processed"]
+                    last_counts["included"] = current_stats["documents_included"]
+                    
+                    # Create a summary message
+                    excluded_total = sum(current_stats["documents_excluded"].values())
+                    
+                    # Get current queue depths safely
+                    try:
+                        obj_queue_size = object_queue.qsize()
+                    except NotImplementedError:
+                        # Some platforms don't support qsize()
+                        obj_queue_size = "?"
+                        
+                    try:
+                        scored_queue_size = scored_doc_queue.qsize()
+                    except NotImplementedError:
+                        scored_queue_size = "?"
+                    
+                    # Add exclusion breakdown to help diagnose filtering issues
+                    excluded_breakdown = ", ".join([
+                        f"{key}={val}" 
+                        for key, val in current_stats["documents_excluded"].items() 
+                        if val > 0
+                    ])
+                    
+                    result_queue.put(
+                        f"Progress: {current_stats['objects_processed']}/{current_stats['total_objects']} objects | "
+                        f"Parsed: {current_stats['documents_parsed']} docs | "
+                        f"Included: {current_stats['documents_included']} | "
+                        f"Excluded: {excluded_total} ({excluded_breakdown}) | "
+                        f"Queue: {obj_queue_size}/{scored_queue_size}"
+                    )
+                
+                # Break if both queues are empty and no active threads
+                if object_queue.empty() and scored_doc_queue.empty() and all_tasks_done.is_set():
+                    break
+        except Exception as e:
+            result_queue.put(f"Monitor error: {e}")
+    
+    # Start producer thread
+    producer_thread = threading.Thread(target=producer_fn)
+    producer_thread.daemon = True
+    producer_thread.start()
+    
+    # Start consumer threads
+    consumer_threads = []
+    for _ in range(num_consumer_threads):
+        t = threading.Thread(target=end_to_end_consumer_fn)
+        t.daemon = True
+        consumer_threads.append(t)
+        
+    # Start all consumer threads (after they're all created)
+    for t in consumer_threads:
+        t.start()
+    
+    # Create event for signaling completion
+    all_tasks_done = threading.Event()
+    
+    # Start monitor thread
+    monitor_thread = threading.Thread(target=monitor_fn)
+    monitor_thread.daemon = True
+    monitor_thread.start()
+    
+    # Start a separate thread to handle messages from the result queue
+    def result_handler_fn():
+        try:
+            while not stop_event.is_set():
+                try:
+                    # Get message from result queue with timeout
+                    message = result_queue.get(timeout=0.5)
+                    console.print(message)
+                    result_queue.task_done()
+                except queue.Empty:
+                    # Check if all threads are done
+                    if (not producer_thread.is_alive() and 
+                        all(not t.is_alive() for t in consumer_threads) and
+                        scored_doc_queue.empty()):
+                        all_tasks_done.set()
+                        break
+                    continue
+        except Exception as e:
+            console.print(f"Result handler error: {e}")
+    
+    # Start result handler thread
+    result_handler_thread = threading.Thread(target=result_handler_fn)
+    result_handler_thread.daemon = True
+    result_handler_thread.start()
+    
+    # Process documents from the scored queue and yield to Dataset.from_generator
+    def yield_scored_documents() -> Generator[Dict[str, Any], None, None]:
+        """Yield documents that pass quality filtering with end-to-end processing."""
+        documents_yielded = 0
+        
+        # Signal that we're starting to yield documents
+        console.print("[cyan]Starting document upload to HuggingFace...[/cyan]")
+        
+        while True:
+            try:
+                # Check if all processing is complete and queue is empty
+                if (not producer_thread.is_alive() and 
+                    all(not t.is_alive() for t in consumer_threads) and
+                    scored_doc_queue.empty()):
+                    break
+                
+                # Get document from queue with timeout
+                try:
+                    doc = scored_doc_queue.get(timeout=0.5)
+                except queue.Empty:
                     continue
                 
-                # Add to seen hashes
-                seen_hashes.add(token_hash)
-                stats["included"] += 1
+                # Yield the document
+                yield doc
+                documents_yielded += 1
                 
-                # Yield document with only the required fields (no extra metadata)
-                yield {
-                    "identifier": doc.get("identifier"),
-                    "dataset": doc.get("dataset"),
-                    "mime_type": doc.get("mime_type"),
-                    "score": score,
-                    "tokens": tokens
-                }
-            else:
-                stats["excluded_score"] += 1
-            
-            # Update progress periodically (less frequently for better performance)
-            if count % update_interval == 0:
-                # Update on progress and stats
-                total_excluded = sum(v for k, v in stats.items() if k != 'included')
+                # Signal task completion
+                scored_doc_queue.task_done()
                 
-                console.print(f"Documents processed: {count}, included: {stats['included']} ({round(stats['included']/count*100, 1)}%), "
-                             f"excluded: {total_excluded} ({round(total_excluded/count*100, 1)}%)")
+                # Periodically report progress
+                if documents_yielded % 100 == 0:
+                    console.print(f"[cyan]Uploaded {documents_yielded} documents to HuggingFace[/cyan]")
                 
-                # If we have a limit, show progress percentage
-                if limit:
-                    progress_pct = min(100, round(count / limit * 100, 1))
-                    console.print(f"Progress: {progress_pct}% ({count}/{limit})")
-        
-        # Log final statistics
-        total_excluded = sum(v for k, v in stats.items() if k != 'included')
-        console.print(f"[green]Dataset {dataset_id} processing complete:[/green]")
-        console.print(f"[green]- Total processed: {count}[/green]")
-        if count > 0:  # Avoid division by zero
-            console.print(f"[green]- Included: {stats['included']} ({round(stats['included']/count*100, 1)}%)[/green]")
-            console.print(f"[green]- Excluded: {total_excluded} ({round(total_excluded/count*100, 1)}%)[/green]")
-        else:
-            console.print(f"[green]- Included: {stats['included']}[/green]")
-            console.print(f"[green]- Excluded: {total_excluded}[/green]")
-        console.print(f"[green]  - Score threshold: {stats['excluded_score']}[/green]")
-        console.print(f"[green]  - Empty documents: {stats['excluded_empty']}[/green]")
-        console.print(f"[green]  - Duplicates: {stats['excluded_duplicate']}[/green]")
+                # Check if we've reached the limit
+                if limit and documents_yielded >= limit:
+                    console.print(f"[cyan]Reached limit of {limit} documents[/cyan]")
+                    break
+                    
+            except Exception as e:
+                console.print(f"Error yielding document: {e}")
+                continue
     
     # Create and upload dataset
-    dataset = Dataset.from_generator(yield_scored_documents)
-    dataset.push_to_hub(output_name)
+    try:
+        # Use Dataset.from_generator but delay until documents are available
+        while scored_doc_queue.empty() and producer_thread.is_alive():
+            time.sleep(0.5)
+            
+        # Check if we have any documents to upload
+        if scored_doc_queue.empty() and not producer_thread.is_alive():
+            console.print("[bold red]No documents available for upload. Check logs for details.[/bold red]")
+            stop_event.set()
+        else:
+            # Create and upload the dataset
+            dataset = Dataset.from_generator(yield_scored_documents)
+            console.print(f"[cyan]Pushing dataset to HuggingFace as {output_name}...[/cyan]")
+            dataset.push_to_hub(output_name)
+            
+            # Wait for threads to complete
+            stop_event.set()
+            producer_thread.join(timeout=5.0)
+            for t in consumer_threads:
+                t.join(timeout=5.0)
+            monitor_thread.join(timeout=5.0)
+            result_handler_thread.join(timeout=5.0)
+            
+            # Calculate final statistics
+            with stats_lock:
+                final_stats = stats.copy()
+                
+            # Log final statistics
+            excluded_total = sum(final_stats["documents_excluded"].values())
+            
+            console.print(f"[green]Dataset {dataset_id} processing complete:[/green]")
+            console.print(f"[green]- Objects processed: {final_stats['objects_processed']}/{final_stats['total_objects']}[/green]")
+            console.print(f"[green]- Documents parsed: {final_stats['documents_parsed']}[/green]")
+            
+            if final_stats['documents_parsed'] > 0:  # Avoid division by zero
+                included_pct = round(final_stats['documents_included']/final_stats['documents_parsed']*100, 1)
+                excluded_pct = round(excluded_total/final_stats['documents_parsed']*100, 1)
+                
+                console.print(f"[green]- Documents included: {final_stats['documents_included']} ({included_pct}%)[/green]")
+                console.print(f"[green]- Documents excluded: {excluded_total} ({excluded_pct}%)[/green]")
+                console.print(f"[green]  - Score threshold: {final_stats['documents_excluded']['score']}[/green]")
+                console.print(f"[green]  - Empty documents: {final_stats['documents_excluded']['empty']}[/green]")
+                console.print(f"[green]  - Large documents: {final_stats['documents_excluded']['large']}[/green]")
+                console.print(f"[green]  - Serialization errors: {final_stats['documents_excluded']['serialize_error']}[/green]")
+                console.print(f"[green]  - Duplicates: {final_stats['documents_excluded']['duplicate']}[/green]")
+            else:
+                console.print(f"[green]- Documents included: {final_stats['documents_included']}[/green]")
+                console.print(f"[green]- Documents excluded: {excluded_total}[/green]")
+            
+            console.print(f"[bold green]Upload completed! Dataset available at: https://huggingface.co/datasets/{output_name}[/bold green]")
     
-    console.print(f"[bold green]Upload completed! Dataset available at: https://huggingface.co/datasets/{output_name}[/bold green]")
+    except KeyboardInterrupt:
+        console.print("[bold red]Upload interrupted by user[/bold red]")
+        stop_event.set()
+    except Exception as e:
+        console.print(f"[bold red]Error during upload: {e}[/bold red]")
+    finally:
+        # Ensure all threads are stopped
+        stop_event.set()
 
 
 def main() -> None:
     """
-    Main entry point for end-to-end HuggingFace data processing.
+    Main entry point for end-to-end HuggingFace data processing with streamlined pipeline.
     """
     parser = argparse.ArgumentParser(
-        description="Parse, convert, score and upload documents to HuggingFace"
+        description="Parse, convert, score and upload documents to HuggingFace in a streamlined pipeline"
     )
     
+    # Required arguments
     parser.add_argument(
         "dataset_id", 
         help="Dataset ID to process"
@@ -364,6 +608,8 @@ def main() -> None:
         "output_name", 
         help="HuggingFace dataset name to create"
     )
+    
+    # Processing options
     parser.add_argument(
         "--key-prefix", 
         help="Optional prefix for filtering keys"
@@ -373,6 +619,11 @@ def main() -> None:
         type=float, 
         default=10.0,
         help="Quality score threshold (default: 10.0)"
+    )
+    parser.add_argument(
+        "--all-documents",
+        action="store_true",
+        help="Include all documents regardless of quality score"
     )
     parser.add_argument(
         "--limit", 
@@ -397,7 +648,30 @@ def main() -> None:
         help="Number of tokens to hash for deduplication"
     )
     
+    # Threading options
+    parser.add_argument(
+        "--producer-threads",
+        type=int,
+        default=4,
+        help="Number of threads for retrieving S3 objects (default: 4)"
+    )
+    parser.add_argument(
+        "--consumer-threads",
+        type=int,
+        default=4,
+        help="Number of threads for processing documents (default: 4)"
+    )
+    parser.add_argument(
+        "--queue-size",
+        type=int,
+        default=200,
+        help="Size of queue for communication between threads (default: 200)"
+    )
+    
     args = parser.parse_args()
+    
+    # Print multithreading info
+    print(f"Using {args.producer_threads} producer thread(s) and {args.consumer_threads} consumer thread(s)")
     
     process_and_upload(
         dataset_id=args.dataset_id,
@@ -407,7 +681,11 @@ def main() -> None:
         limit=args.limit,
         clobber=args.clobber,
         max_size=args.max_size,
-        num_hash_tokens=args.num_hash_tokens
+        num_hash_tokens=args.num_hash_tokens,
+        num_producer_threads=args.producer_threads,
+        num_consumer_threads=args.consumer_threads,
+        queue_size=args.queue_size,
+        all_documents=args.all_documents
     )
 
 
