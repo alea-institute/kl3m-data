@@ -14,6 +14,8 @@ from datasets import (
     Dataset,
     interleave_datasets,
     concatenate_datasets,
+    Sequence,
+    Value
 )
 from huggingface_hub import hf_api
 
@@ -92,6 +94,8 @@ class HFLoader(BaseLoader):
 
         if shuffle:
             combined_dataset = combined_dataset.shuffle()
+
+        combined_dataset = combined_dataset.cast_column("tokens", Sequence(Value("int64")))
 
         return combined_dataset
 
