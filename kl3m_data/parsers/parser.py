@@ -158,14 +158,11 @@ def get_output_key(input_key: str) -> str:
     Returns:
         str: The output location key.
     """
-    # split into components
-    components = input_key.split("/")
-
-    # replaced the first component with 'representations'
-    components[0] = "representations"
-
-    # join the components
-    return "/".join(components)
+    # Import here to avoid circular imports
+    from kl3m_data.utils.s3_utils import get_representation_key
+    
+    # Use the utility function to convert to representation key
+    return get_representation_key(input_key)
 
 
 def parse_object(

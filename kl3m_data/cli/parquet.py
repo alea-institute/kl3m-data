@@ -30,12 +30,16 @@ from kl3m_data.metrics.quality_metrics import get_metrics
 # project imports
 from kl3m_data.utils.parquet_utils import serialize_document, deserialize_document_bytes
 from kl3m_data.utils.s3_utils import (
+    S3Stage,
     get_s3_client,
     iter_prefix,
     put_object_bytes,
     check_object_exists,
     get_object_bytes,
     iter_prefix_shard,
+    get_stage_prefix,
+    get_parquet_key,
+    get_index_key,
 )
 from kl3m_data.logger import LOGGER
 
@@ -58,14 +62,14 @@ def convert_dataset(
     Returns:
         None
     """
+    # setup paths using utility functions
     if dataset_id == "all":
-        representation_path = "representations/"
-        parquet_path = "parquet/"
+        representation_path = get_stage_prefix(S3Stage.REPRESENTATIONS)
+        parquet_path = get_stage_prefix(S3Stage.PARQUET)
         dataset_id = "all"
     else:
-        # setup paths
-        representation_path = f"representations/{dataset_id}/"
-        parquet_path = f"parquet/{dataset_id}/"
+        representation_path = get_stage_prefix(S3Stage.REPRESENTATIONS, dataset_id)
+        parquet_path = get_stage_prefix(S3Stage.PARQUET, dataset_id)
 
     # get s3 client
     s3_client = get_s3_client()
@@ -106,10 +110,8 @@ def convert_dataset(
                 status=f"converted: {converted} skipped: {skipped} failed: {failed}",
             )
 
-            # get parquet key
-            parquet_key = object_key.replace(representation_path, parquet_path)[
-                : -len(".json")
-            ]
+            # get parquet key using utility function
+            parquet_key = get_parquet_key(object_key)
 
             # check if already exists
             if not clobber:
@@ -192,7 +194,7 @@ def get_sample_batch(
     # Load indexes with improved retry logic
     index_objects = []
     for dataset in datasets:
-        index_path = f"index/{dataset}.json.gz"
+        index_path = get_index_key(dataset)
         index_bytes = get_object_bytes(
             s3_client, "data.kl3m.ai", index_path, retry_count=3, retry_delay=1.0
         )
@@ -226,9 +228,7 @@ def get_sample_batch(
             if filter_method and not filter_method(object_key):
                 continue
 
-            parquet_key = object_key.replace("representations/", "parquet/")[
-                : -len(".json")
-            ]
+            parquet_key = get_parquet_key(object_key)
 
             # Check if parquet file exists with improved check
             if check_object_exists(

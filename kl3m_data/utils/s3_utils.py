@@ -8,8 +8,9 @@ import hashlib
 import hmac
 import os
 import time
+from enum import Enum
 from pathlib import Path
-from typing import Generator, Optional
+from typing import Generator, Optional, List
 from urllib.parse import quote
 
 # packages
@@ -23,6 +24,16 @@ from kl3m_data.logger import LOGGER
 
 # timeouts
 DEFAULT_TIMEOUT = 600
+
+# S3 storage stages
+class S3Stage(Enum):
+    """
+    Enum for S3 storage stages
+    """
+    DOCUMENTS = "documents"
+    REPRESENTATIONS = "representations"
+    PARQUET = "parquet"
+    INDEX = "index"
 
 
 def get_s3_config(
@@ -246,6 +257,40 @@ def get_object_bytes(
                             bucket, key, retry_count, e)
                 return None
                 
+    return None
+
+
+def get_object(
+    client: boto3.client,
+    bucket: str,
+    key: str,
+    retry_count: int = 3,
+    retry_delay: float = 1.0,
+) -> Optional[str]:
+    """
+    Get an object from an S3 bucket and return it as a string with improved retry logic.
+
+    Args:
+        client (boto3.client): S3 client.
+        bucket (str): Bucket name.
+        key (str): Object key.
+        retry_count (int): Number of retries on failure.
+        retry_delay (float): Delay between retries in seconds.
+
+    Returns:
+        str: Object data as a UTF-8 string, or None if an error occurs.
+    """
+    # Get the object as bytes
+    data_bytes = get_object_bytes(client, bucket, key, retry_count, retry_delay)
+    
+    # Convert to string if we got data
+    if data_bytes is not None:
+        try:
+            return data_bytes.decode('utf-8')
+        except UnicodeDecodeError as e:
+            LOGGER.error("Error decoding object %s://%s: %s", bucket, key, e)
+            return None
+    
     return None
 
 
@@ -608,3 +653,199 @@ async def get_object_bytes_async(
         except Exception as e:  # pylint: disable=broad-except
             LOGGER.error("Error getting object: %s", e)
             return None
+
+
+def get_stage_prefix(stage: S3Stage, dataset_id: Optional[str] = None) -> str:
+    """
+    Get the S3 prefix for a specific stage and optional dataset ID.
+
+    Args:
+        stage (S3Stage): The storage stage
+        dataset_id (Optional[str]): The dataset ID (optional)
+
+    Returns:
+        str: The S3 prefix
+    """
+    if stage == S3Stage.INDEX:
+        return f"{stage.value}/"
+    elif dataset_id:
+        return f"{stage.value}/{dataset_id}/"
+    else:
+        return f"{stage.value}/"
+
+
+def convert_key_to_stage(key: str, target_stage: S3Stage) -> str:
+    """
+    Convert an S3 key from its current stage to the target stage.
+
+    Args:
+        key (str): The S3 key to convert
+        target_stage (S3Stage): The target storage stage
+
+    Returns:
+        str: The converted S3 key
+    """
+    LOGGER.debug(f"Converting key '{key}' to stage '{target_stage.value}'")
+    
+    # Split the key into components
+    components = key.split("/")
+    
+    if len(components) < 2:
+        raise ValueError(f"Invalid key format: {key}")
+    
+    # Save the original stage
+    original_stage = components[0]
+    
+    # Replace the first component with the target stage
+    components[0] = target_stage.value
+    
+    # For parquet, we need to handle extension differently
+    if target_stage == S3Stage.PARQUET:
+        # Always remove the .json extension when converting to parquet
+        if key.endswith(".json"):
+            result = "/".join(components)[:-len(".json")]
+            LOGGER.debug(f"Converted '{key}' from '{original_stage}' to '{target_stage.value}': '{result}' (removed .json)")
+            return result
+        else:
+            # Key doesn't end with .json - e.g., when converting from parquet to parquet
+            result = "/".join(components)
+            LOGGER.debug(f"Converted '{key}' from '{original_stage}' to '{target_stage.value}': '{result}' (no extension change)")
+            return result
+    
+    # For document and representation stages, we need to ensure proper extension
+    elif target_stage in [S3Stage.DOCUMENTS, S3Stage.REPRESENTATIONS]:
+        # If converting from parquet (no extension) to documents/representations, add .json
+        if original_stage == S3Stage.PARQUET.value and not key.endswith(".json"):
+            result = "/".join(components) + ".json"
+            LOGGER.debug(f"Converted '{key}' from '{original_stage}' to '{target_stage.value}': '{result}' (added .json)")
+            return result
+    
+    # Default case - just change the stage prefix
+    result = "/".join(components)
+    LOGGER.debug(f"Converted '{key}' from '{original_stage}' to '{target_stage.value}': '{result}' (stage prefix only)")
+    return result
+
+
+def get_document_key(key: str) -> str:
+    """
+    Convert any key to a document key.
+
+    Args:
+        key (str): The S3 key to convert
+
+    Returns:
+        str: The document key
+    """
+    return convert_key_to_stage(key, S3Stage.DOCUMENTS)
+
+
+def get_representation_key(key: str) -> str:
+    """
+    Convert any key to a representation key.
+
+    Args:
+        key (str): The S3 key to convert
+
+    Returns:
+        str: The representation key
+    """
+    return convert_key_to_stage(key, S3Stage.REPRESENTATIONS)
+
+
+def get_parquet_key(key: str) -> str:
+    """
+    Convert any key to a parquet key (removes .json extension if present).
+
+    Args:
+        key (str): The S3 key to convert
+
+    Returns:
+        str: The parquet key
+    """
+    return convert_key_to_stage(key, S3Stage.PARQUET)
+
+
+def get_index_key(dataset_id: str) -> str:
+    """
+    Get the index key for a dataset.
+
+    Args:
+        dataset_id (str): The dataset ID
+
+    Returns:
+        str: The index key
+    """
+    return f"{S3Stage.INDEX.value}/{dataset_id}.json.gz"
+
+
+def check_stage_exists(
+    client: boto3.client,
+    bucket: str,
+    key: str,
+    stage: S3Stage,
+    retry_count: int = 2,
+    retry_delay: float = 0.5,
+) -> bool:
+    """
+    Check if an object exists in a specific S3 stage.
+
+    Args:
+        client (boto3.client): S3 client
+        bucket (str): Bucket name
+        key (str): The original key (from any stage)
+        stage (S3Stage): The stage to check
+        retry_count (int): Number of retries on failure
+        retry_delay (float): Delay between retries in seconds
+
+    Returns:
+        bool: Whether the object exists in the specified stage
+    """
+    # Convert the key to the target stage
+    stage_key = convert_key_to_stage(key, stage)
+    
+    # Log the check
+    LOGGER.debug(f"Checking if object exists in {stage.value} stage: {stage_key}")
+    
+    # Check if the object exists
+    result = check_object_exists(client, bucket, stage_key, retry_count, retry_delay)
+    
+    # Log the result
+    if result:
+        LOGGER.debug(f"Object exists in {stage.value} stage: {stage_key}")
+    else:
+        LOGGER.debug(f"Object does NOT exist in {stage.value} stage: {stage_key}")
+        
+    return result
+
+
+def list_dataset_ids(
+    client: boto3.client,
+    bucket: str,
+    stage: S3Stage = S3Stage.DOCUMENTS,
+) -> List[str]:
+    """
+    List all dataset IDs available in a specific stage.
+
+    Args:
+        client (boto3.client): S3 client
+        bucket (str): Bucket name
+        stage (S3Stage): The stage to list datasets from
+
+    Returns:
+        List[str]: List of dataset IDs
+    """
+    # Get the prefix for the stage
+    prefix = get_stage_prefix(stage)
+    
+    # List common prefixes
+    common_prefixes = list_common_prefixes(client, bucket, prefix)
+    
+    # Extract dataset IDs from prefixes
+    dataset_ids = []
+    for prefix in common_prefixes:
+        # Extract dataset ID from prefix (format: "stage/dataset_id/")
+        parts = prefix.rstrip("/").split("/")
+        if len(parts) >= 2:
+            dataset_ids.append(parts[1])
+    
+    return dataset_ids

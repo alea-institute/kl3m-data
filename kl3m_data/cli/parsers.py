@@ -24,6 +24,7 @@ from rich.progress import (
 from kl3m_data.logger import LOGGER
 from kl3m_data.parsers.parser import get_output_key, parse_object
 from kl3m_data.utils.s3_utils import (
+    S3Stage,
     check_object_exists,
     get_s3_client,
     iter_prefix,
@@ -31,6 +32,8 @@ from kl3m_data.utils.s3_utils import (
     put_object_bytes,
     list_common_prefixes,
     get_object_bytes,
+    get_stage_prefix,
+    get_index_key,
 )
 
 
@@ -97,11 +100,11 @@ def parse_serial(
     # initialize S3 client
     s3_client = get_s3_client()
 
-    # handle optional dataset id
+    # handle optional dataset id using utility functions
     if dataset_id:
-        dataset_paths = [f"documents/{dataset_id}/"]
+        dataset_paths = [get_stage_prefix(S3Stage.DOCUMENTS, dataset_id)]
     else:
-        dataset_paths = ["documents/"]
+        dataset_paths = [get_stage_prefix(S3Stage.DOCUMENTS)]
 
     # setup progress tracking
     progress_columns = [
@@ -198,9 +201,9 @@ def build_dataset_index(dataset_id: str):
     Returns:
         None
     """
-    # set up the paths
-    representation_path = f"representations/{dataset_id}/"
-    index_path = f"index/{dataset_id}.json.gz"
+    # set up the paths using utility functions
+    representation_path = get_stage_prefix(S3Stage.REPRESENTATIONS, dataset_id)
+    index_path = get_index_key(dataset_id)
 
     # get the paths
     c = get_s3_client()
@@ -266,7 +269,7 @@ def build_all_dataset_index():
     """
     # get the paths
     c = get_s3_client()
-    dataset_paths = list_common_prefixes(c, "data.kl3m.ai", "representations/")
+    dataset_paths = list_common_prefixes(c, "data.kl3m.ai", get_stage_prefix(S3Stage.REPRESENTATIONS))
 
     # run build index for each
     for dataset_path in dataset_paths:

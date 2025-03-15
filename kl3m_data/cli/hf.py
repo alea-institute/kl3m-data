@@ -35,7 +35,7 @@ from kl3m_data.metrics.quality_metrics import get_metrics
 from kl3m_data.utils.s3_utils import (
     get_s3_client,
     get_s3_config,
-    iter_prefix,
+    iter_prefix, check_object_exists,
 )
 from kl3m_data.parsers.parser import parse_object
 from kl3m_data.utils.parquet_utils import serialize_document
@@ -395,6 +395,9 @@ def process_and_upload(
         "objects_skipped": 0,
         "objects_failed": 0,
         "documents_parsed": 0,
+        "documents_already_parsed": 0,
+        "documents_already_parquet": 0,
+        "documents_loaded_from_representation": 0,
         "documents_converted": 0,
         "documents_scored": 0,
         "documents_included": 0,
@@ -418,6 +421,11 @@ def process_and_upload(
             "2-5": 0,
             "5-10": 0,
             "10+": 0
+        },
+        "stages": {
+            "already_in_parquet": 0,      # Objects already fully processed
+            "loaded_from_representation": 0,  # Objects loaded from representation
+            "parsed_from_scratch": 0      # Objects parsed from documents
         }
     }
 
@@ -474,7 +482,7 @@ def process_and_upload(
     def end_to_end_consumer_fn():
         # Create optimized local S3 client
         local_s3_config = get_s3_config(
-            pool_size=10,
+            pool_size=4,
             connect_timeout=10,
             read_timeout=60,
             retry_count=3,
@@ -497,15 +505,130 @@ def process_and_upload(
                     object_queue.put(None)
                     break
 
-                # STEP 1: Parse the object
+                # STEP 1: Check if the object has already been processed at each stage
                 try:
-                    LOGGER.debug(f"Parsing object: {s3_obj.key}")
-                    parsed_docs = parse_object(
-                        local_s3_client,
-                        "data.kl3m.ai",
-                        s3_obj.key,
-                        max_size=max_size_bytes,
-                    )
+                    # Check if representation already exists
+                    LOGGER.debug("Checking if object already parsed to representation")
+                    representation_key = "representations/" + "/".join(s3_obj.key.split("/")[1:])
+
+                    # Check if parquet already exists
+                    parquet_key = "parquet/" + "/".join(s3_obj.key.split("/")[1:])
+                    
+                    # If parquet exists, skip all processing (fully processed)
+                    if check_object_exists(local_s3_client, "data.kl3m.ai", parquet_key):
+                        LOGGER.debug(f"Object already fully processed to parquet: {s3_obj.key}")
+                        with stats_lock:
+                            stats["documents_already_parsed"] += 1
+                            stats["documents_already_parquet"] += 1
+                            stats["stages"]["already_in_parquet"] += 1
+                        s3_obj.status = "already_processed"
+                        object_queue.task_done()
+                        continue
+                    
+                    # If representation exists but not parquet, we need to load the representation and continue processing
+                    parsed_docs = []
+                    if check_object_exists(local_s3_client, "data.kl3m.ai", representation_key):
+                        LOGGER.debug(f"Object already parsed to representation: {s3_obj.key}")
+                        with stats_lock:
+                            stats["documents_already_parsed"] += 1
+                        s3_obj.status = "already_parsed"
+                        
+                        # Load the representation instead of parsing from scratch
+                        try:
+                            from kl3m_data.utils.s3_utils import get_object
+                            representation_content = get_object(local_s3_client, "data.kl3m.ai", representation_key)
+                            # Check for valid JSON content - must begin with [ or { character
+                            if representation_content and representation_content.strip() and representation_content.strip()[0] in '[{':
+                                # Convert to parsed_doc format
+                                from kl3m_data.parsers.parser import ParsedDocument
+                                
+                                # Handle different data formats (single document or list of documents)
+                                try:
+                                    LOGGER.debug(f"Representation content (first 100 chars): {representation_content[:100]}...")
+                                    rep_data = json.loads(representation_content)
+                                    
+                                    # Additional logging for debugging
+                                    LOGGER.debug(f"Representation data type: {type(rep_data)}")
+                                    if isinstance(rep_data, (list, dict)):
+                                        LOGGER.debug(f"Representation data length/keys: {len(rep_data) if isinstance(rep_data, list) else list(rep_data.keys())}")
+                                    
+                                    # Check if rep_data is a list or a single document
+                                    if isinstance(rep_data, list):
+                                        docs_to_process = rep_data
+                                    else:
+                                        # Handle single document case
+                                        docs_to_process = [rep_data]
+                                    
+                                    # Create ParsedDocument objects with representation data
+                                    for doc in docs_to_process:
+                                        if not isinstance(doc, dict):
+                                            LOGGER.warning(f"Unexpected document format (not a dict): {type(doc)}")
+                                            # Additional debug info
+                                            if isinstance(doc, str):
+                                                LOGGER.warning(f"Document is a string (first 50 chars): {doc[:50]}...")
+                                            continue
+                                            
+                                        parsed_doc = ParsedDocument(
+                                            source=doc.get("source", "unknown"),
+                                            identifier=doc.get("identifier", s3_obj.key),
+                                            original_uri=doc.get("original_uri", f"s3://data.kl3m.ai/{s3_obj.key}"),
+                                            representations=doc.get("representations", {}),
+                                            metadata=doc.get("metadata", {}),
+                                            success=True,
+                                            error=None
+                                        )
+                                        parsed_docs.append(parsed_doc)
+                                except Exception as e:
+                                    LOGGER.warning(f"Error processing representation data: {e}")
+                                    # Fall back to creating a minimal document from the S3 key
+                                    parsed_doc = ParsedDocument(
+                                        source="unknown",
+                                        identifier=s3_obj.key,
+                                        original_uri=f"s3://data.kl3m.ai/{s3_obj.key}",
+                                        success=True,
+                                        error=None
+                                    )
+                                    parsed_docs.append(parsed_doc)
+                                LOGGER.debug(f"Loaded {len(parsed_docs)} documents from representation")
+                                # Update stats for loading from representation
+                                with stats_lock:
+                                    stats["documents_loaded_from_representation"] += len(parsed_docs)
+                                    stats["stages"]["loaded_from_representation"] += 1
+                            else:
+                                # Fall back to parsing if representation couldn't be loaded
+                                LOGGER.warning(f"Failed to load representation for {s3_obj.key}, falling back to parsing")
+                                parsed_docs = parse_object(
+                                    local_s3_client,
+                                    "data.kl3m.ai",
+                                    s3_obj.key,
+                                    max_size=max_size_bytes,
+                                )
+                                # Update stats for parsing from scratch
+                                with stats_lock:
+                                    stats["stages"]["parsed_from_scratch"] += 1
+                        except Exception as e:
+                            LOGGER.warning(f"Error loading representation for {s3_obj.key}: {e}, falling back to parsing")
+                            parsed_docs = parse_object(
+                                local_s3_client,
+                                "data.kl3m.ai",
+                                s3_obj.key,
+                                max_size=max_size_bytes,
+                            )
+                            # Update stats for parsing from scratch due to error
+                            with stats_lock:
+                                stats["stages"]["parsed_from_scratch"] += 1
+                    else:
+                        # If no representation exists, parse from scratch
+                        LOGGER.debug(f"Parsing object from scratch: {s3_obj.key}")
+                        parsed_docs = parse_object(
+                            local_s3_client,
+                            "data.kl3m.ai",
+                            s3_obj.key,
+                            max_size=max_size_bytes,
+                        )
+                        # Update stats for parsing from scratch
+                        with stats_lock:
+                            stats["stages"]["parsed_from_scratch"] += 1
 
                     # If no successful docs were parsed, skip to next object
                     successful_docs = [doc for doc in parsed_docs if doc.success]
@@ -829,11 +952,14 @@ def process_and_upload(
                         avg_included = current_stats["score_stats"]["sum_included"] / current_stats["score_stats"]["count_included"]
                         avg_score_msg = f" | Avg score: {avg_included:.4f}"
                     
+                    # Add stage information
+                    stages_msg = f" | Stages: {current_stats['stages']['already_in_parquet']}🟢/{current_stats['stages']['loaded_from_representation']}🟡/{current_stats['stages']['parsed_from_scratch']}🔴"
+                    
                     result_queue.put(
                         f"Progress: {current_stats['objects_processed']}/{current_stats['total_objects']} objects | "
                         f"Parsed: {current_stats['documents_parsed']} docs | "
                         f"Included: {current_stats['documents_included']} | "
-                        f"Excluded: {excluded_total} ({excluded_breakdown}){avg_score_msg} | "
+                        f"Excluded: {excluded_total} ({excluded_breakdown}){avg_score_msg}{stages_msg} | "
                         f"Queue: {obj_queue_size}/{scored_queue_size}"
                     )
 
@@ -1139,6 +1265,12 @@ def process_and_upload(
                         if count > 0:
                             percentage = round(count / total_scored * 100, 1)
                             console.print(f"[green]  - {bin_name}: {count} ({percentage}%)[/green]")
+                
+                # Add processing stage statistics
+                console.print(f"[green]- Processing stages:[/green]")
+                console.print(f"[green]  - Already in parquet: {final_stats['stages']['already_in_parquet']}[/green]")
+                console.print(f"[green]  - Loaded from representation: {final_stats['stages']['loaded_from_representation']}[/green]")
+                console.print(f"[green]  - Parsed from scratch: {final_stats['stages']['parsed_from_scratch']}[/green]")
             else:
                 console.print(
                     f"[green]- Documents included: {final_stats['documents_included']}[/green]"
