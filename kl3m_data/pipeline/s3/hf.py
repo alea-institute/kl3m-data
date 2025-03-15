@@ -83,7 +83,7 @@ def extract_tokens_and_metadata(
             # Fallback to empty text
             result["text"] = ""
     else:
-        # Default to tokens format
+        # Default to tokens format - will be cast to int32 when creating the dataset
         result["tokens"] = tokens
 
     # Calculate scores if requested
@@ -404,7 +404,31 @@ def push_to_huggingface(
 
             # Then load and push to Hugging Face
             console.print(f"Loading dataset from {temp_path}...")
-            dataset = datasets.load_dataset("json", data_files=temp_path)
+
+            # Define features based on format_type
+            if format_type == "tokens":
+                from datasets import Features, Value, Sequence
+
+                features = Features(
+                    {
+                        "identifier": Value("string"),
+                        "dataset": Value("string"),
+                        "mime_type": Value("string"),
+                        "tokens": Sequence(Value("int32")),
+                        "score": Value("float32"),
+                    }
+                )
+                if include_metrics:
+                    # Add metrics feature if included
+                    features["metrics"] = Value("string")  # JSON serialized
+
+                # Load dataset with specified features to ensure int32 tokens
+                dataset = datasets.load_dataset(
+                    "json", data_files=temp_path, features=features
+                )
+            else:
+                # For text format, default features are fine
+                dataset = datasets.load_dataset("json", data_files=temp_path)
 
             # Push to Hugging Face
             console.print(
@@ -584,7 +608,31 @@ def push_to_huggingface(
         doc_count = 0
 
         # Create and push dataset
-        dataset = datasets.Dataset.from_generator(generate_documents)
+        if format_type == "tokens":
+            # Define features to ensure int32 tokens
+            from datasets import Features, Value, Sequence
+
+            features = Features(
+                {
+                    "identifier": Value("string"),
+                    "dataset": Value("string"),
+                    "mime_type": Value("string"),
+                    "tokens": Sequence(Value("int32")),
+                    "score": Value("float32"),
+                }
+            )
+            if include_metrics:
+                # Add metrics feature if included
+                features["metrics"] = Value("string")  # JSON serialized
+
+            # Create dataset with specified features
+            dataset = datasets.Dataset.from_generator(
+                generate_documents, features=features
+            )
+        else:
+            # For text format, use default features
+            dataset = datasets.Dataset.from_generator(generate_documents)
+
         dataset.push_to_hub(output_name)
 
         console.print(
