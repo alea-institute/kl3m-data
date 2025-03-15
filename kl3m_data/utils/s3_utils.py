@@ -25,11 +25,13 @@ from kl3m_data.logger import LOGGER
 # timeouts
 DEFAULT_TIMEOUT = 600
 
+
 # S3 storage stages
 class S3Stage(Enum):
     """
     Enum for S3 storage stages
     """
+
     DOCUMENTS = "documents"
     REPRESENTATIONS = "representations"
     PARQUET = "parquet"
@@ -68,10 +70,10 @@ def get_s3_config(
             "mode": retry_mode,
         },
     }
-    
+
     if region_name is not None:
         config_dict["region_name"] = region_name
-        
+
     # Create config from dictionary
     config = botocore.config.Config(**config_dict)
 
@@ -150,27 +152,44 @@ def put_object_bytes(
                 Key=key,
                 Body=data,
             )
-            
+
             if attempt > 0:
-                LOGGER.info("Put object %s/%s (%d bytes) after %d retries", 
-                           bucket, key, len(data), attempt)
+                LOGGER.info(
+                    "Put object %s/%s (%d bytes) after %d retries",
+                    bucket,
+                    key,
+                    len(data),
+                    attempt,
+                )
             else:
                 LOGGER.info("Put object %s/%s (%d bytes)", bucket, key, len(data))
-                
+
             return True
-            
+
         except Exception as e:  # pylint: disable=broad-except
             if attempt < retry_count:
                 # Calculate exponential backoff delay
-                backoff_delay = retry_delay * (2 ** attempt)
-                LOGGER.warning("Error putting object %s/%s: %s. Retrying in %.1f seconds... (%d/%d)", 
-                              bucket, key, e, backoff_delay, attempt + 1, retry_count)
+                backoff_delay = retry_delay * (2**attempt)
+                LOGGER.warning(
+                    "Error putting object %s/%s: %s. Retrying in %.1f seconds... (%d/%d)",
+                    bucket,
+                    key,
+                    e,
+                    backoff_delay,
+                    attempt + 1,
+                    retry_count,
+                )
                 time.sleep(backoff_delay)
             else:
-                LOGGER.error("Error putting object %s/%s after %d retries: %s", 
-                            bucket, key, retry_count, e)
+                LOGGER.error(
+                    "Error putting object %s/%s after %d retries: %s",
+                    bucket,
+                    key,
+                    retry_count,
+                    e,
+                )
                 return False
-    
+
     return False
 
 
@@ -228,35 +247,52 @@ def get_object_bytes(
                 Bucket=bucket,
                 Key=key,
             )
-            
+
             # Stream and read content in chunks if needed
             data = response["Body"].read()
-            
+
             if attempt > 0:
-                LOGGER.info("Got object %s://%s after %d retries (%d bytes)", 
-                           bucket, key, attempt, len(data))
+                LOGGER.info(
+                    "Got object %s://%s after %d retries (%d bytes)",
+                    bucket,
+                    key,
+                    attempt,
+                    len(data),
+                )
             else:
                 LOGGER.info("Got object %s://%s (%d bytes)", bucket, key, len(data))
-                
+
             return data
-            
+
         except client.exceptions.NoSuchKey:
             # Don't retry if the key doesn't exist
             LOGGER.error("Object %s://%s does not exist", bucket, key)
             return None
-            
+
         except Exception as e:  # pylint: disable=broad-except
             if attempt < retry_count:
                 # Calculate exponential backoff delay
-                backoff_delay = retry_delay * (2 ** attempt)
-                LOGGER.warning("Error getting object %s://%s: %s. Retrying in %.1f seconds... (%d/%d)", 
-                              bucket, key, e, backoff_delay, attempt + 1, retry_count)
+                backoff_delay = retry_delay * (2**attempt)
+                LOGGER.warning(
+                    "Error getting object %s://%s: %s. Retrying in %.1f seconds... (%d/%d)",
+                    bucket,
+                    key,
+                    e,
+                    backoff_delay,
+                    attempt + 1,
+                    retry_count,
+                )
                 time.sleep(backoff_delay)
             else:
-                LOGGER.error("Error getting object %s://%s after %d retries: %s", 
-                            bucket, key, retry_count, e)
+                LOGGER.error(
+                    "Error getting object %s://%s after %d retries: %s",
+                    bucket,
+                    key,
+                    retry_count,
+                    e,
+                )
                 return None
-                
+
     return None
 
 
@@ -282,15 +318,15 @@ def get_object(
     """
     # Get the object as bytes
     data_bytes = get_object_bytes(client, bucket, key, retry_count, retry_delay)
-    
+
     # Convert to string if we got data
     if data_bytes is not None:
         try:
-            return data_bytes.decode('utf-8')
+            return data_bytes.decode("utf-8")
         except UnicodeDecodeError as e:
             LOGGER.error("Error decoding object %s://%s: %s", bucket, key, e)
             return None
-    
+
     return None
 
 
@@ -322,34 +358,58 @@ def check_object_exists(
                 Key=key,
             )
             return True
-            
+
         except client.exceptions.ClientError as e:
             # If the error is 404, the object doesn't exist
-            if e.response['Error']['Code'] == '404':
+            if e.response["Error"]["Code"] == "404":
                 return False
-                
+
             # For other client errors, retry if we have attempts left
             if attempt < retry_count:
-                backoff_delay = retry_delay * (2 ** attempt)
-                LOGGER.warning("Error checking if object %s/%s exists: %s. Retrying in %.1f seconds... (%d/%d)",
-                             bucket, key, e, backoff_delay, attempt + 1, retry_count)
+                backoff_delay = retry_delay * (2**attempt)
+                LOGGER.warning(
+                    "Error checking if object %s/%s exists: %s. Retrying in %.1f seconds... (%d/%d)",
+                    bucket,
+                    key,
+                    e,
+                    backoff_delay,
+                    attempt + 1,
+                    retry_count,
+                )
                 time.sleep(backoff_delay)
             else:
-                LOGGER.error("Error checking if object %s/%s exists after %d retries: %s",
-                           bucket, key, retry_count, e)
+                LOGGER.error(
+                    "Error checking if object %s/%s exists after %d retries: %s",
+                    bucket,
+                    key,
+                    retry_count,
+                    e,
+                )
                 return False
-                
+
         except Exception as e:  # pylint: disable=broad-except
             if attempt < retry_count:
-                backoff_delay = retry_delay * (2 ** attempt)
-                LOGGER.warning("Error checking if object %s/%s exists: %s. Retrying in %.1f seconds... (%d/%d)",
-                             bucket, key, e, backoff_delay, attempt + 1, retry_count)
+                backoff_delay = retry_delay * (2**attempt)
+                LOGGER.warning(
+                    "Error checking if object %s/%s exists: %s. Retrying in %.1f seconds... (%d/%d)",
+                    bucket,
+                    key,
+                    e,
+                    backoff_delay,
+                    attempt + 1,
+                    retry_count,
+                )
                 time.sleep(backoff_delay)
             else:
-                LOGGER.error("Error checking if object %s/%s exists after %d retries: %s",
-                           bucket, key, retry_count, e)
+                LOGGER.error(
+                    "Error checking if object %s/%s exists after %d retries: %s",
+                    bucket,
+                    key,
+                    retry_count,
+                    e,
+                )
                 return False
-    
+
     return False
 
 
@@ -437,16 +497,14 @@ def iter_prefix(
         pagination_config = {
             "PageSize": page_size,  # Retrieve more keys per request
         }
-        
+
         if max_items:
             pagination_config["MaxItems"] = max_items
-            
+
         list_results = list_paginator.paginate(
-            Bucket=bucket, 
-            Prefix=prefix,
-            PaginationConfig=pagination_config
+            Bucket=bucket, Prefix=prefix, PaginationConfig=pagination_config
         )
-        
+
         for results in list_results:
             if "Contents" in results:
                 # Process all keys in one batch for better performance
@@ -457,12 +515,12 @@ def iter_prefix(
 
 
 def iter_prefix_shard(
-    client: boto3.client, 
-    bucket: str, 
-    prefix: str, 
+    client: boto3.client,
+    bucket: str,
+    prefix: str,
     shard: str,
     page_size: int = 1000,
-    max_items: Optional[int] = None
+    max_items: Optional[int] = None,
 ) -> Generator[str, None, None]:
     """
     Iterate over objects with a prefix in an S3 bucket, filtered by shard.
@@ -484,16 +542,14 @@ def iter_prefix_shard(
         pagination_config = {
             "PageSize": page_size,  # Retrieve more keys per request
         }
-        
+
         if max_items:
             pagination_config["MaxItems"] = max_items
-            
+
         list_results = list_paginator.paginate(
-            Bucket=bucket, 
-            Prefix=prefix,
-            PaginationConfig=pagination_config
+            Bucket=bucket, Prefix=prefix, PaginationConfig=pagination_config
         )
-        
+
         for results in list_results:
             if "Contents" in results:
                 # Pre-calculate hashes for the entire batch
@@ -502,7 +558,7 @@ def iter_prefix_shard(
                     key_hash = hashlib.blake2b(obj["Key"].encode()).hexdigest().lower()
                     if key_hash.startswith(shard):
                         filtered_keys.append(obj["Key"])
-                
+
                 # Yield filtered keys
                 for key in filtered_keys:
                     yield key
@@ -686,43 +742,51 @@ def convert_key_to_stage(key: str, target_stage: S3Stage) -> str:
         str: The converted S3 key
     """
     LOGGER.debug(f"Converting key '{key}' to stage '{target_stage.value}'")
-    
+
     # Split the key into components
     components = key.split("/")
-    
+
     if len(components) < 2:
         raise ValueError(f"Invalid key format: {key}")
-    
+
     # Save the original stage
     original_stage = components[0]
-    
+
     # Replace the first component with the target stage
     components[0] = target_stage.value
-    
+
     # For parquet, we need to handle extension differently
     if target_stage == S3Stage.PARQUET:
         # Always remove the .json extension when converting to parquet
         if key.endswith(".json"):
-            result = "/".join(components)[:-len(".json")]
-            LOGGER.debug(f"Converted '{key}' from '{original_stage}' to '{target_stage.value}': '{result}' (removed .json)")
+            result = "/".join(components)[: -len(".json")]
+            LOGGER.debug(
+                f"Converted '{key}' from '{original_stage}' to '{target_stage.value}': '{result}' (removed .json)"
+            )
             return result
         else:
             # Key doesn't end with .json - e.g., when converting from parquet to parquet
             result = "/".join(components)
-            LOGGER.debug(f"Converted '{key}' from '{original_stage}' to '{target_stage.value}': '{result}' (no extension change)")
+            LOGGER.debug(
+                f"Converted '{key}' from '{original_stage}' to '{target_stage.value}': '{result}' (no extension change)"
+            )
             return result
-    
+
     # For document and representation stages, we need to ensure proper extension
     elif target_stage in [S3Stage.DOCUMENTS, S3Stage.REPRESENTATIONS]:
         # If converting from parquet (no extension) to documents/representations, add .json
         if original_stage == S3Stage.PARQUET.value and not key.endswith(".json"):
             result = "/".join(components) + ".json"
-            LOGGER.debug(f"Converted '{key}' from '{original_stage}' to '{target_stage.value}': '{result}' (added .json)")
+            LOGGER.debug(
+                f"Converted '{key}' from '{original_stage}' to '{target_stage.value}': '{result}' (added .json)"
+            )
             return result
-    
+
     # Default case - just change the stage prefix
     result = "/".join(components)
-    LOGGER.debug(f"Converted '{key}' from '{original_stage}' to '{target_stage.value}': '{result}' (stage prefix only)")
+    LOGGER.debug(
+        f"Converted '{key}' from '{original_stage}' to '{target_stage.value}': '{result}' (stage prefix only)"
+    )
     return result
 
 
@@ -802,19 +866,19 @@ def check_stage_exists(
     """
     # Convert the key to the target stage
     stage_key = convert_key_to_stage(key, stage)
-    
+
     # Log the check
     LOGGER.debug(f"Checking if object exists in {stage.value} stage: {stage_key}")
-    
+
     # Check if the object exists
     result = check_object_exists(client, bucket, stage_key, retry_count, retry_delay)
-    
+
     # Log the result
     if result:
         LOGGER.debug(f"Object exists in {stage.value} stage: {stage_key}")
     else:
         LOGGER.debug(f"Object does NOT exist in {stage.value} stage: {stage_key}")
-        
+
     return result
 
 
@@ -836,10 +900,10 @@ def list_dataset_ids(
     """
     # Get the prefix for the stage
     prefix = get_stage_prefix(stage)
-    
+
     # List common prefixes
     common_prefixes = list_common_prefixes(client, bucket, prefix)
-    
+
     # Extract dataset IDs from prefixes
     dataset_ids = []
     for prefix in common_prefixes:
@@ -847,5 +911,5 @@ def list_dataset_ids(
         parts = prefix.rstrip("/").split("/")
         if len(parts) >= 2:
             dataset_ids.append(parts[1])
-    
+
     return dataset_ids

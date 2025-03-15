@@ -269,7 +269,9 @@ def build_all_dataset_index():
     """
     # get the paths
     c = get_s3_client()
-    dataset_paths = list_common_prefixes(c, "data.kl3m.ai", get_stage_prefix(S3Stage.REPRESENTATIONS))
+    dataset_paths = list_common_prefixes(
+        c, "data.kl3m.ai", get_stage_prefix(S3Stage.REPRESENTATIONS)
+    )
 
     # run build index for each
     for dataset_path in dataset_paths:

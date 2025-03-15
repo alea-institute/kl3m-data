@@ -111,16 +111,16 @@ def score_text(metrics: dict) -> float:
                 raise RuntimeError(
                     f"Component for metric {metric} is {component}, metrics are {metrics}, weights are {METRIC_WEIGHTS}"
                 )
-                
+
             # Only record non-zero components to help diagnose scoring issues
             if component > 0:
                 score_components[metric] = {
                     "value": value,
                     "range": (lower, upper),
                     "weight": weight,
-                    "component": component
+                    "component": component,
                 }
-                
+
             total_score += component
 
     # if the score is nan or inf, raise runtime error and print all metrics
@@ -128,10 +128,10 @@ def score_text(metrics: dict) -> float:
         raise RuntimeError(
             f"Score is {total_score}, metrics are {metrics}, weights are {METRIC_WEIGHTS}"
         )
-        
+
     # Add to metrics to help diagnose scoring issues
     metrics["_score_components"] = score_components
-    
+
     return total_score
 
 
@@ -349,7 +349,7 @@ def get_metrics(record: dict) -> dict:
         # Based on token IDs for kl3m-004-128k-cased tokenizer
         # These may need adjustment if the tokenizer changes
         bad_bigram_token_ids = (35464, 67042, 108832)
-        
+
         # Add common format tokens that might appear in the tokenizer
         # For kl3m-004-128k-cased, this includes special tokens like <s>, <pad>, etc.
         bad_format_token_ids = (

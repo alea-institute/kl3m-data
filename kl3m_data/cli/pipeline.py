@@ -30,40 +30,40 @@ def status_command(dataset_id: str, key_prefix: Optional[str] = None) -> None:
     """
     # Initialize the pipeline
     pipeline = DatasetPipeline(dataset_id, key_prefix=key_prefix)
-    
+
     # Get document counts
     counts = pipeline.get_document_counts()
-    
+
     # Calculate missing documents
-    missing_representation = pipeline.get_missing_documents(S3Stage.DOCUMENTS, S3Stage.REPRESENTATIONS)
-    missing_parquet = pipeline.get_missing_documents(S3Stage.REPRESENTATIONS, S3Stage.PARQUET)
-    
+    missing_representation = pipeline.get_missing_documents(
+        S3Stage.DOCUMENTS, S3Stage.REPRESENTATIONS
+    )
+    missing_parquet = pipeline.get_missing_documents(
+        S3Stage.REPRESENTATIONS, S3Stage.PARQUET
+    )
+
     # Create a table for display
     console = Console()
     table = Table(title=f"Pipeline Status: {dataset_id}")
-    
+
     # Add columns
     table.add_column("Stage", style="cyan")
     table.add_column("Count", style="green")
     table.add_column("Missing", style="red")
-    
+
     # Add rows
+    table.add_row(S3Stage.DOCUMENTS.value, str(counts.get(S3Stage.DOCUMENTS, 0)), "")
     table.add_row(
-        S3Stage.DOCUMENTS.value, 
-        str(counts.get(S3Stage.DOCUMENTS, 0)),
-        ""
-    )
-    table.add_row(
-        S3Stage.REPRESENTATIONS.value, 
+        S3Stage.REPRESENTATIONS.value,
         str(counts.get(S3Stage.REPRESENTATIONS, 0)),
-        str(len(missing_representation))
+        str(len(missing_representation)),
     )
     table.add_row(
-        S3Stage.PARQUET.value, 
+        S3Stage.PARQUET.value,
         str(counts.get(S3Stage.PARQUET, 0)),
-        str(len(missing_parquet))
+        str(len(missing_parquet)),
     )
-    
+
     # Display the table
     console.print(table)
 
@@ -74,34 +74,40 @@ def list_datasets_command() -> None:
     """
     # Get S3 client
     s3_client = get_s3_client()
-    
+
     # Get datasets from each stage
-    document_datasets = set(list_dataset_ids(s3_client, "data.kl3m.ai", S3Stage.DOCUMENTS))
-    representation_datasets = set(list_dataset_ids(s3_client, "data.kl3m.ai", S3Stage.REPRESENTATIONS))
+    document_datasets = set(
+        list_dataset_ids(s3_client, "data.kl3m.ai", S3Stage.DOCUMENTS)
+    )
+    representation_datasets = set(
+        list_dataset_ids(s3_client, "data.kl3m.ai", S3Stage.REPRESENTATIONS)
+    )
     parquet_datasets = set(list_dataset_ids(s3_client, "data.kl3m.ai", S3Stage.PARQUET))
-    
+
     # Get all unique dataset IDs
-    all_datasets = document_datasets.union(representation_datasets).union(parquet_datasets)
-    
+    all_datasets = document_datasets.union(representation_datasets).union(
+        parquet_datasets
+    )
+
     # Create a table for display
     console = Console()
     table = Table(title="Available Datasets")
-    
+
     # Add columns
     table.add_column("Dataset ID", style="cyan")
     table.add_column("Documents", style="green")
     table.add_column("Representations", style="green")
     table.add_column("Parquet", style="green")
-    
+
     # Add rows
     for dataset_id in sorted(all_datasets):
         table.add_row(
             dataset_id,
             "✓" if dataset_id in document_datasets else "✗",
             "✓" if dataset_id in representation_datasets else "✗",
-            "✓" if dataset_id in parquet_datasets else "✗"
+            "✓" if dataset_id in parquet_datasets else "✗",
         )
-    
+
     # Display the table
     console.print(table)
 
@@ -130,25 +136,29 @@ def process_command(
     # Convert stage strings to enums
     source = S3Stage[source_stage.upper()]
     target = S3Stage[target_stage.upper()]
-    
+
     # Initialize the pipeline
     pipeline = DatasetPipeline(dataset_id, key_prefix=key_prefix)
-    
+
     # Process the stage
     console = Console()
     start_time = time.time()
-    with console.status(f"Processing {dataset_id}: {source.value} -> {target.value}..."):
+    with console.status(
+        f"Processing {dataset_id}: {source.value} -> {target.value}..."
+    ):
         processed, errors = pipeline.process_stage(
             source, target, max_workers, max_size, clobber
         )
-    
+
     # Calculate processing time
     duration = time.time() - start_time
-    
+
     # Display results
-    console.print(f"[green]Processed:[/green] {processed} documents in {duration:.2f} seconds")
+    console.print(
+        f"[green]Processed:[/green] {processed} documents in {duration:.2f} seconds"
+    )
     if processed > 0 and duration > 0:
-        console.print(f"[blue]Rate:[/blue] {processed/duration:.2f} docs/sec")
+        console.print(f"[blue]Rate:[/blue] {processed / duration:.2f} docs/sec")
     if errors > 0:
         console.print(f"[red]Errors:[/red] {errors} documents")
 
@@ -163,7 +173,7 @@ def process_missing_command(
 ) -> None:
     """
     Efficiently process only documents that exist in source_stage but not in target_stage.
-    
+
     Args:
         dataset_id (str): Dataset ID
         source_stage (str): Source stage
@@ -175,34 +185,38 @@ def process_missing_command(
     # Convert stage strings to enums
     source = S3Stage[source_stage.upper()]
     target = S3Stage[target_stage.upper()]
-    
+
     # Initialize the pipeline
     pipeline = DatasetPipeline(dataset_id, key_prefix=key_prefix)
-    
+
     # First, get the list of missing documents
     console = Console()
-    console.print(f"Finding missing documents for {dataset_id}: {source.value} -> {target.value}...")
+    console.print(
+        f"Finding missing documents for {dataset_id}: {source.value} -> {target.value}..."
+    )
     missing_docs = pipeline.get_missing_documents(source, target)
     console.print(f"Found {len(missing_docs)} documents to process")
-    
+
     if not missing_docs:
         console.print("[green]All documents are already processed![/green]")
         return
-    
+
     # Process the missing documents
     start_time = time.time()
     with console.status(f"Processing {len(missing_docs)} missing documents..."):
         processed, errors = pipeline.process_stage_missing_only(
             source, target, max_workers, max_size
         )
-    
+
     # Calculate processing time
     duration = time.time() - start_time
-    
+
     # Display results
-    console.print(f"[green]Processed:[/green] {processed} documents in {duration:.2f} seconds")
+    console.print(
+        f"[green]Processed:[/green] {processed} documents in {duration:.2f} seconds"
+    )
     if processed > 0 and duration > 0:
-        console.print(f"[blue]Rate:[/blue] {processed/duration:.2f} docs/sec")
+        console.print(f"[blue]Rate:[/blue] {processed / duration:.2f} docs/sec")
     if errors > 0:
         console.print(f"[red]Errors:[/red] {errors} documents")
 
@@ -216,7 +230,7 @@ def process_all_command(
 ) -> None:
     """
     Process all stages of the pipeline for a dataset (documents → representations → parquet).
-    
+
     Args:
         dataset_id (str): Dataset ID
         key_prefix (Optional[str]): Optional key prefix to filter objects
@@ -227,7 +241,7 @@ def process_all_command(
     # Initialize the pipeline
     pipeline = DatasetPipeline(dataset_id, key_prefix=key_prefix)
     console = Console()
-    
+
     # Stage 1: Documents → Representations
     console.print(f"[bold]Stage 1:[/bold] Processing documents → representations")
     start_time = time.time()
@@ -235,14 +249,16 @@ def process_all_command(
         processed_1, errors_1 = pipeline.process_stage(
             S3Stage.DOCUMENTS, S3Stage.REPRESENTATIONS, max_workers, max_size, clobber
         )
-    
+
     duration_1 = time.time() - start_time
-    console.print(f"[green]Processed:[/green] {processed_1} documents in {duration_1:.2f} seconds")
+    console.print(
+        f"[green]Processed:[/green] {processed_1} documents in {duration_1:.2f} seconds"
+    )
     if processed_1 > 0 and duration_1 > 0:
-        console.print(f"[blue]Rate:[/blue] {processed_1/duration_1:.2f} docs/sec")
+        console.print(f"[blue]Rate:[/blue] {processed_1 / duration_1:.2f} docs/sec")
     if errors_1 > 0:
         console.print(f"[red]Errors:[/red] {errors_1} documents")
-    
+
     # Stage 2: Representations → Parquet
     console.print(f"\n[bold]Stage 2:[/bold] Processing representations → parquet")
     start_time = time.time()
@@ -250,34 +266,38 @@ def process_all_command(
         processed_2, errors_2 = pipeline.process_stage(
             S3Stage.REPRESENTATIONS, S3Stage.PARQUET, max_workers, max_size, clobber
         )
-    
+
     duration_2 = time.time() - start_time
-    console.print(f"[green]Processed:[/green] {processed_2} documents in {duration_2:.2f} seconds")
+    console.print(
+        f"[green]Processed:[/green] {processed_2} documents in {duration_2:.2f} seconds"
+    )
     if processed_2 > 0 and duration_2 > 0:
-        console.print(f"[blue]Rate:[/blue] {processed_2/duration_2:.2f} docs/sec")
+        console.print(f"[blue]Rate:[/blue] {processed_2 / duration_2:.2f} docs/sec")
     if errors_2 > 0:
         console.print(f"[red]Errors:[/red] {errors_2} documents")
-    
+
     # Build index (optional if any documents were processed)
     if processed_1 > 0 or processed_2 > 0:
         console.print(f"\n[bold]Building index[/bold] for {dataset_id}")
         with console.status(f"Building index..."):
             success = pipeline.build_index()
-        
+
         if success:
             console.print(f"[green]Successfully built index for {dataset_id}[/green]")
         else:
             console.print(f"[red]Failed to build index for {dataset_id}[/red]")
-    
+
     # Summary
     total_processed = processed_1 + processed_2
     total_errors = errors_1 + errors_2
     total_duration = duration_1 + duration_2
-    
+
     console.print(f"\n[bold]Summary:[/bold]")
-    console.print(f"Total processed: {total_processed} documents in {total_duration:.2f} seconds")
+    console.print(
+        f"Total processed: {total_processed} documents in {total_duration:.2f} seconds"
+    )
     if total_processed > 0 and total_duration > 0:
-        console.print(f"Overall rate: {total_processed/total_duration:.2f} docs/sec")
+        console.print(f"Overall rate: {total_processed / total_duration:.2f} docs/sec")
     if total_errors > 0:
         console.print(f"Total errors: {total_errors} documents")
 
@@ -290,7 +310,7 @@ def process_all_missing_command(
 ) -> None:
     """
     Efficiently process only missing documents through all stages of the pipeline.
-    
+
     Args:
         dataset_id (str): Dataset ID
         key_prefix (Optional[str]): Optional key prefix to filter objects
@@ -300,13 +320,17 @@ def process_all_missing_command(
     # Initialize the pipeline
     pipeline = DatasetPipeline(dataset_id, key_prefix=key_prefix)
     console = Console()
-    
+
     # Stage 1: Documents → Representations (missing only)
-    console.print(f"[bold]Stage 1:[/bold] Processing missing documents → representations")
+    console.print(
+        f"[bold]Stage 1:[/bold] Processing missing documents → representations"
+    )
     console.print(f"Finding missing documents...")
-    missing_docs_1 = pipeline.get_missing_documents(S3Stage.DOCUMENTS, S3Stage.REPRESENTATIONS)
+    missing_docs_1 = pipeline.get_missing_documents(
+        S3Stage.DOCUMENTS, S3Stage.REPRESENTATIONS
+    )
     console.print(f"Found {len(missing_docs_1)} documents to process")
-    
+
     processed_1, errors_1, duration_1 = 0, 0, 0
     if missing_docs_1:
         start_time = time.time()
@@ -314,22 +338,28 @@ def process_all_missing_command(
             processed_1, errors_1 = pipeline.process_stage_missing_only(
                 S3Stage.DOCUMENTS, S3Stage.REPRESENTATIONS, max_workers, max_size
             )
-        
+
         duration_1 = time.time() - start_time
-        console.print(f"[green]Processed:[/green] {processed_1} documents in {duration_1:.2f} seconds")
+        console.print(
+            f"[green]Processed:[/green] {processed_1} documents in {duration_1:.2f} seconds"
+        )
         if processed_1 > 0 and duration_1 > 0:
-            console.print(f"[blue]Rate:[/blue] {processed_1/duration_1:.2f} docs/sec")
+            console.print(f"[blue]Rate:[/blue] {processed_1 / duration_1:.2f} docs/sec")
         if errors_1 > 0:
             console.print(f"[red]Errors:[/red] {errors_1} documents")
     else:
         console.print("[green]No missing documents to process![/green]")
-    
+
     # Stage 2: Representations → Parquet (missing only)
-    console.print(f"\n[bold]Stage 2:[/bold] Processing missing representations → parquet")
+    console.print(
+        f"\n[bold]Stage 2:[/bold] Processing missing representations → parquet"
+    )
     console.print(f"Finding missing documents...")
-    missing_docs_2 = pipeline.get_missing_documents(S3Stage.REPRESENTATIONS, S3Stage.PARQUET)
+    missing_docs_2 = pipeline.get_missing_documents(
+        S3Stage.REPRESENTATIONS, S3Stage.PARQUET
+    )
     console.print(f"Found {len(missing_docs_2)} documents to process")
-    
+
     processed_2, errors_2, duration_2 = 0, 0, 0
     if missing_docs_2:
         start_time = time.time()
@@ -337,36 +367,40 @@ def process_all_missing_command(
             processed_2, errors_2 = pipeline.process_stage_missing_only(
                 S3Stage.REPRESENTATIONS, S3Stage.PARQUET, max_workers, max_size
             )
-        
+
         duration_2 = time.time() - start_time
-        console.print(f"[green]Processed:[/green] {processed_2} documents in {duration_2:.2f} seconds")
+        console.print(
+            f"[green]Processed:[/green] {processed_2} documents in {duration_2:.2f} seconds"
+        )
         if processed_2 > 0 and duration_2 > 0:
-            console.print(f"[blue]Rate:[/blue] {processed_2/duration_2:.2f} docs/sec")
+            console.print(f"[blue]Rate:[/blue] {processed_2 / duration_2:.2f} docs/sec")
         if errors_2 > 0:
             console.print(f"[red]Errors:[/red] {errors_2} documents")
     else:
         console.print("[green]No missing documents to process![/green]")
-    
+
     # Build index (optional if any documents were processed)
     if processed_1 > 0 or processed_2 > 0:
         console.print(f"\n[bold]Building index[/bold] for {dataset_id}")
         with console.status(f"Building index..."):
             success = pipeline.build_index()
-        
+
         if success:
             console.print(f"[green]Successfully built index for {dataset_id}[/green]")
         else:
             console.print(f"[red]Failed to build index for {dataset_id}[/red]")
-    
+
     # Summary
     total_processed = processed_1 + processed_2
     total_errors = errors_1 + errors_2
     total_duration = duration_1 + duration_2
-    
+
     console.print(f"\n[bold]Summary:[/bold]")
-    console.print(f"Total processed: {total_processed} documents in {total_duration:.2f} seconds")
+    console.print(
+        f"Total processed: {total_processed} documents in {total_duration:.2f} seconds"
+    )
     if total_processed > 0 and total_duration > 0:
-        console.print(f"Overall rate: {total_processed/total_duration:.2f} docs/sec")
+        console.print(f"Overall rate: {total_processed / total_duration:.2f} docs/sec")
     if total_errors > 0:
         console.print(f"Total errors: {total_errors} documents")
 
@@ -381,12 +415,12 @@ def build_index_command(dataset_id: str, key_prefix: Optional[str] = None) -> No
     """
     # Initialize the pipeline
     pipeline = DatasetPipeline(dataset_id, key_prefix=key_prefix)
-    
+
     # Build the index
     console = Console()
     with console.status(f"Building index for {dataset_id}..."):
         success = pipeline.build_index()
-    
+
     # Display results
     if success:
         console.print(f"[green]Successfully built index for {dataset_id}[/green]")
@@ -407,7 +441,7 @@ def export_jsonl_command(
 ) -> None:
     """
     Export dataset documents to a JSONL file.
-    
+
     Args:
         dataset_id: Dataset ID to export
         output_path: Path to output JSONL file
@@ -421,7 +455,7 @@ def export_jsonl_command(
     """
     # Convert source stage string to enum
     source = S3Stage[source_stage.upper()]
-    
+
     # Export to JSONL
     export_to_jsonl(
         dataset_id=dataset_id,
@@ -439,7 +473,6 @@ def export_jsonl_command(
 def push_to_hf_command(
     dataset_id: str,
     output_name: str,
-    source_stage: str,
     key_prefix: Optional[str] = None,
     max_workers: int = 10,
     max_documents: Optional[int] = None,
@@ -447,25 +480,26 @@ def push_to_hf_command(
     deduplicate: bool = True,
     include_metrics: bool = False,
     use_temp_file: bool = True,
+    format_type: str = "tokens",
 ) -> None:
     """
     Export dataset documents to Hugging Face.
-    
+
     Args:
         dataset_id: Dataset ID to export
         output_name: Name of the Hugging Face dataset to create/update
-        source_stage: Which pipeline stage to export from (representations or parquet)
         key_prefix: Optional key prefix to filter objects
         max_workers: Maximum number of worker threads for parallel processing
         max_documents: Maximum number of documents to export
         score_threshold: Optional quality score threshold
         deduplicate: Whether to deduplicate documents based on tokens
         include_metrics: Whether to include detailed metrics in the output
-        use_temp_file: Whether to use a temporary file (more reliable) 
+        use_temp_file: Whether to use a temporary file (more reliable)
+        format_type: Output format type, either "tokens" for token IDs or "text" for decoded text
     """
-    # Convert source stage string to enum
-    source = S3Stage[source_stage.upper()]
-    
+    # Always use PARQUET stage
+    source = S3Stage.PARQUET
+
     # Push to Hugging Face
     push_to_huggingface(
         dataset_id=dataset_id,
@@ -478,6 +512,7 @@ def push_to_hf_command(
         deduplicate=deduplicate,
         include_metrics=include_metrics,
         use_temp_file=use_temp_file,
+        format_type=format_type,
     )
 
 
@@ -487,19 +522,25 @@ def main() -> None:
     """
     parser = argparse.ArgumentParser(description="kl3m data pipeline CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    
+
     # List datasets command
     list_parser = subparsers.add_parser("list", help="List all datasets")
-    
+
     # Status command
     status_parser = subparsers.add_parser("status", help="Show dataset status")
     status_parser.add_argument("dataset_id", help="Dataset ID")
-    status_parser.add_argument("--key-prefix", help="Key prefix to filter objects within the dataset")
-    
+    status_parser.add_argument(
+        "--key-prefix", help="Key prefix to filter objects within the dataset"
+    )
+
     # Process command
-    process_parser = subparsers.add_parser("process", help="Process documents from one stage to another")
+    process_parser = subparsers.add_parser(
+        "process", help="Process documents from one stage to another"
+    )
     process_parser.add_argument("dataset_id", help="Dataset ID")
-    process_parser.add_argument("--key-prefix", help="Key prefix to filter objects within the dataset")
+    process_parser.add_argument(
+        "--key-prefix", help="Key prefix to filter objects within the dataset"
+    )
     process_parser.add_argument(
         "source_stage",
         choices=["documents", "representations", "parquet"],
@@ -526,14 +567,16 @@ def main() -> None:
         action="store_true",
         help="Overwrite existing files",
     )
-    
+
     # Process Missing command
     process_missing_parser = subparsers.add_parser(
-        "process-missing", 
-        help="Efficiently process only documents missing from target stage"
+        "process-missing",
+        help="Efficiently process only documents missing from target stage",
     )
     process_missing_parser.add_argument("dataset_id", help="Dataset ID")
-    process_missing_parser.add_argument("--key-prefix", help="Key prefix to filter objects within the dataset")
+    process_missing_parser.add_argument(
+        "--key-prefix", help="Key prefix to filter objects within the dataset"
+    )
     process_missing_parser.add_argument(
         "source_stage",
         choices=["documents", "representations", "parquet"],
@@ -555,14 +598,16 @@ def main() -> None:
         type=int,
         help="Maximum file size in bytes",
     )
-    
+
     # Process All command
     process_all_parser = subparsers.add_parser(
-        "process-all", 
-        help="Process through all stages (documents→representations→parquet)"
+        "process-all",
+        help="Process through all stages (documents→representations→parquet)",
     )
     process_all_parser.add_argument("dataset_id", help="Dataset ID")
-    process_all_parser.add_argument("--key-prefix", help="Key prefix to filter objects within the dataset")
+    process_all_parser.add_argument(
+        "--key-prefix", help="Key prefix to filter objects within the dataset"
+    )
     process_all_parser.add_argument(
         "--max-workers",
         type=int,
@@ -579,14 +624,15 @@ def main() -> None:
         action="store_true",
         help="Overwrite existing files",
     )
-    
+
     # Process All Missing command
     process_all_missing_parser = subparsers.add_parser(
-        "process-all-missing", 
-        help="Process only missing documents through all stages"
+        "process-all-missing", help="Process only missing documents through all stages"
     )
     process_all_missing_parser.add_argument("dataset_id", help="Dataset ID")
-    process_all_missing_parser.add_argument("--key-prefix", help="Key prefix to filter objects within the dataset")
+    process_all_missing_parser.add_argument(
+        "--key-prefix", help="Key prefix to filter objects within the dataset"
+    )
     process_all_missing_parser.add_argument(
         "--max-workers",
         type=int,
@@ -598,14 +644,20 @@ def main() -> None:
         type=int,
         help="Maximum file size in bytes",
     )
-    
+
     # Build index command
-    index_parser = subparsers.add_parser("build-index", help="Build an index for a dataset")
+    index_parser = subparsers.add_parser(
+        "build-index", help="Build an index for a dataset"
+    )
     index_parser.add_argument("dataset_id", help="Dataset ID")
-    index_parser.add_argument("--key-prefix", help="Key prefix to filter objects within the dataset")
-    
+    index_parser.add_argument(
+        "--key-prefix", help="Key prefix to filter objects within the dataset"
+    )
+
     # Export JSONL command
-    export_parser = subparsers.add_parser("export-jsonl", help="Export dataset to JSONL file")
+    export_parser = subparsers.add_parser(
+        "export-jsonl", help="Export dataset to JSONL file"
+    )
     export_parser.add_argument("dataset_id", help="Dataset ID")
     export_parser.add_argument("output_path", help="Path to output JSONL file")
     export_parser.add_argument(
@@ -613,7 +665,9 @@ def main() -> None:
         choices=["representations", "parquet"],
         help="Source stage to export from",
     )
-    export_parser.add_argument("--key-prefix", help="Key prefix to filter objects within the dataset")
+    export_parser.add_argument(
+        "--key-prefix", help="Key prefix to filter objects within the dataset"
+    )
     export_parser.add_argument(
         "--max-workers",
         type=int,
@@ -640,17 +694,18 @@ def main() -> None:
         action="store_true",
         help="Include detailed metrics in output",
     )
-    
+
     # Push to Hugging Face command
-    hf_parser = subparsers.add_parser("push-to-hf", help="Export dataset to Hugging Face")
-    hf_parser.add_argument("dataset_id", help="Dataset ID")
-    hf_parser.add_argument("output_name", help="Name of the Hugging Face dataset to create")
-    hf_parser.add_argument(
-        "source_stage",
-        choices=["representations", "parquet"],
-        help="Source stage to export from",
+    hf_parser = subparsers.add_parser(
+        "push-to-hf", help="Export dataset to Hugging Face"
     )
-    hf_parser.add_argument("--key-prefix", help="Key prefix to filter objects within the dataset")
+    hf_parser.add_argument("dataset_id", help="Dataset ID")
+    hf_parser.add_argument(
+        "output_name", help="Name of the Hugging Face dataset to create"
+    )
+    hf_parser.add_argument(
+        "--key-prefix", help="Key prefix to filter objects within the dataset"
+    )
     hf_parser.add_argument(
         "--max-workers",
         type=int,
@@ -679,13 +734,19 @@ def main() -> None:
     )
     hf_parser.add_argument(
         "--direct-streaming",
-        action="store_true", 
+        action="store_true",
         help="Use direct streaming instead of temporary file",
     )
-    
+    hf_parser.add_argument(
+        "--format-type",
+        choices=["tokens", "text"],
+        default="tokens",
+        help="Output format type: 'tokens' for token IDs or 'text' for decoded text",
+    )
+
     # Parse arguments
     args = parser.parse_args()
-    
+
     # Execute command
     if args.command == "list":
         list_datasets_command()
@@ -743,7 +804,6 @@ def main() -> None:
         push_to_hf_command(
             args.dataset_id,
             args.output_name,
-            args.source_stage,
             args.key_prefix,
             args.max_workers,
             args.max_documents,
@@ -751,6 +811,7 @@ def main() -> None:
             not args.no_deduplicate,
             args.include_metrics,
             not args.direct_streaming,
+            args.format_type,
         )
 
 
