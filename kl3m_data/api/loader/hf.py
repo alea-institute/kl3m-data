@@ -78,7 +78,8 @@ class HFLoader(BaseLoader):
         for dataset_id in dataset_id_list:
             try:
                 partial_datasets.append(
-                    load_dataset(dataset_id, split="train", streaming=stream)
+                    load_dataset(dataset_id, split="train", streaming=stream)\
+                        .cast_column("tokens", Sequence(Value("int64")))
                 )
             except Exception as e:
                 self.logger.error(f"Error loading dataset {dataset_id}: {e}")
@@ -94,8 +95,6 @@ class HFLoader(BaseLoader):
 
         if shuffle:
             combined_dataset = combined_dataset.shuffle()
-
-        combined_dataset = combined_dataset.cast_column("tokens", Sequence(Value("int64")))
 
         return combined_dataset
 
