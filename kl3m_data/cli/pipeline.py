@@ -16,6 +16,7 @@ from rich.progress import Progress
 # project imports
 from kl3m_data.logger import LOGGER
 from kl3m_data.pipeline.s3.dataset import DatasetPipeline
+from kl3m_data.pipeline.s3.hf import export_to_jsonl, push_to_huggingface
 from kl3m_data.utils.s3_utils import get_s3_client, list_dataset_ids, S3Stage
 
 
@@ -393,6 +394,93 @@ def build_index_command(dataset_id: str, key_prefix: Optional[str] = None) -> No
         console.print(f"[red]Failed to build index for {dataset_id}[/red]")
 
 
+def export_jsonl_command(
+    dataset_id: str,
+    output_path: str,
+    source_stage: str,
+    key_prefix: Optional[str] = None,
+    max_workers: int = 10,
+    max_documents: Optional[int] = None,
+    score_threshold: Optional[float] = None,
+    deduplicate: bool = True,
+    include_metrics: bool = False,
+) -> None:
+    """
+    Export dataset documents to a JSONL file.
+    
+    Args:
+        dataset_id: Dataset ID to export
+        output_path: Path to output JSONL file
+        source_stage: Which pipeline stage to export from (representations or parquet)
+        key_prefix: Optional key prefix to filter objects
+        max_workers: Maximum number of worker threads for parallel processing
+        max_documents: Maximum number of documents to export
+        score_threshold: Optional quality score threshold
+        deduplicate: Whether to deduplicate documents based on tokens
+        include_metrics: Whether to include detailed metrics in the output
+    """
+    # Convert source stage string to enum
+    source = S3Stage[source_stage.upper()]
+    
+    # Export to JSONL
+    export_to_jsonl(
+        dataset_id=dataset_id,
+        output_path=output_path,
+        source_stage=source,
+        key_prefix=key_prefix,
+        max_workers=max_workers,
+        max_documents=max_documents,
+        score_threshold=score_threshold,
+        deduplicate=deduplicate,
+        include_metrics=include_metrics,
+    )
+
+
+def push_to_hf_command(
+    dataset_id: str,
+    output_name: str,
+    source_stage: str,
+    key_prefix: Optional[str] = None,
+    max_workers: int = 10,
+    max_documents: Optional[int] = None,
+    score_threshold: Optional[float] = None,
+    deduplicate: bool = True,
+    include_metrics: bool = False,
+    use_temp_file: bool = True,
+) -> None:
+    """
+    Export dataset documents to Hugging Face.
+    
+    Args:
+        dataset_id: Dataset ID to export
+        output_name: Name of the Hugging Face dataset to create/update
+        source_stage: Which pipeline stage to export from (representations or parquet)
+        key_prefix: Optional key prefix to filter objects
+        max_workers: Maximum number of worker threads for parallel processing
+        max_documents: Maximum number of documents to export
+        score_threshold: Optional quality score threshold
+        deduplicate: Whether to deduplicate documents based on tokens
+        include_metrics: Whether to include detailed metrics in the output
+        use_temp_file: Whether to use a temporary file (more reliable) 
+    """
+    # Convert source stage string to enum
+    source = S3Stage[source_stage.upper()]
+    
+    # Push to Hugging Face
+    push_to_huggingface(
+        dataset_id=dataset_id,
+        output_name=output_name,
+        source_stage=source,
+        key_prefix=key_prefix,
+        max_workers=max_workers,
+        max_documents=max_documents,
+        score_threshold=score_threshold,
+        deduplicate=deduplicate,
+        include_metrics=include_metrics,
+        use_temp_file=use_temp_file,
+    )
+
+
 def main() -> None:
     """
     Main entry point for the KL3M Data pipeline CLI.
@@ -516,6 +604,85 @@ def main() -> None:
     index_parser.add_argument("dataset_id", help="Dataset ID")
     index_parser.add_argument("--key-prefix", help="Key prefix to filter objects within the dataset")
     
+    # Export JSONL command
+    export_parser = subparsers.add_parser("export-jsonl", help="Export dataset to JSONL file")
+    export_parser.add_argument("dataset_id", help="Dataset ID")
+    export_parser.add_argument("output_path", help="Path to output JSONL file")
+    export_parser.add_argument(
+        "source_stage",
+        choices=["representations", "parquet"],
+        help="Source stage to export from",
+    )
+    export_parser.add_argument("--key-prefix", help="Key prefix to filter objects within the dataset")
+    export_parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=10,
+        help="Maximum number of worker threads",
+    )
+    export_parser.add_argument(
+        "--max-documents",
+        type=int,
+        help="Maximum number of documents to export",
+    )
+    export_parser.add_argument(
+        "--score-threshold",
+        type=float,
+        help="Quality score threshold (lower is better)",
+    )
+    export_parser.add_argument(
+        "--no-deduplicate",
+        action="store_true",
+        help="Disable deduplication based on tokens",
+    )
+    export_parser.add_argument(
+        "--include-metrics",
+        action="store_true",
+        help="Include detailed metrics in output",
+    )
+    
+    # Push to Hugging Face command
+    hf_parser = subparsers.add_parser("push-to-hf", help="Export dataset to Hugging Face")
+    hf_parser.add_argument("dataset_id", help="Dataset ID")
+    hf_parser.add_argument("output_name", help="Name of the Hugging Face dataset to create")
+    hf_parser.add_argument(
+        "source_stage",
+        choices=["representations", "parquet"],
+        help="Source stage to export from",
+    )
+    hf_parser.add_argument("--key-prefix", help="Key prefix to filter objects within the dataset")
+    hf_parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=10,
+        help="Maximum number of worker threads",
+    )
+    hf_parser.add_argument(
+        "--max-documents",
+        type=int,
+        help="Maximum number of documents to export",
+    )
+    hf_parser.add_argument(
+        "--score-threshold",
+        type=float,
+        help="Quality score threshold (lower is better)",
+    )
+    hf_parser.add_argument(
+        "--no-deduplicate",
+        action="store_true",
+        help="Disable deduplication based on tokens",
+    )
+    hf_parser.add_argument(
+        "--include-metrics",
+        action="store_true",
+        help="Include detailed metrics in output",
+    )
+    hf_parser.add_argument(
+        "--direct-streaming",
+        action="store_true", 
+        help="Use direct streaming instead of temporary file",
+    )
+    
     # Parse arguments
     args = parser.parse_args()
     
@@ -560,6 +727,31 @@ def main() -> None:
         )
     elif args.command == "build-index":
         build_index_command(args.dataset_id, args.key_prefix)
+    elif args.command == "export-jsonl":
+        export_jsonl_command(
+            args.dataset_id,
+            args.output_path,
+            args.source_stage,
+            args.key_prefix,
+            args.max_workers,
+            args.max_documents,
+            args.score_threshold,
+            not args.no_deduplicate,
+            args.include_metrics,
+        )
+    elif args.command == "push-to-hf":
+        push_to_hf_command(
+            args.dataset_id,
+            args.output_name,
+            args.source_stage,
+            args.key_prefix,
+            args.max_workers,
+            args.max_documents,
+            args.score_threshold,
+            not args.no_deduplicate,
+            args.include_metrics,
+            not args.direct_streaming,
+        )
 
 
 if __name__ == "__main__":
