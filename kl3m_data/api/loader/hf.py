@@ -77,11 +77,14 @@ class HFLoader(BaseLoader):
         partial_datasets: list[Dataset] = []
         for dataset_id in dataset_id_list:
             try:
-                partial_datasets.append(
-                    load_dataset(
-                        dataset_id, split="train", streaming=stream
-                    ).cast_column("tokens", Sequence(Value("int64")))
-                )
+                d = load_dataset(
+                    dataset_id, split="train", streaming=stream
+                ).cast_column("tokens", Sequence(Value("int64")))
+
+                if "score" in d.features:
+                    d = d.cast_column("score", Value("float32"))
+
+                partial_datasets.append(d)
             except Exception as e:
                 self.logger.error(f"Error loading dataset {dataset_id}: {e}")
                 continue
