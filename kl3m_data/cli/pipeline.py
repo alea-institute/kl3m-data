@@ -20,17 +20,21 @@ from kl3m_data.pipeline.s3.hf import (
     export_to_jsonl,
     push_to_huggingface,
     list_dataset_subfolders,
+    get_subfolder_status,
 )
 from kl3m_data.utils.s3_utils import get_s3_client, list_dataset_ids, S3Stage
 
 
-def status_command(dataset_id: str, key_prefix: Optional[str] = None) -> None:
+def status_command(
+    dataset_id: str, key_prefix: Optional[str] = None, csv_path: Optional[str] = None
+) -> None:
     """
     Show the status of a dataset in the pipeline.
 
     Args:
         dataset_id (str): Dataset ID
         key_prefix (Optional[str]): Optional key prefix to filter objects
+        csv_path (Optional[str]): Optional path to save results as CSV
     """
     # Initialize the pipeline
     pipeline = DatasetPipeline(dataset_id, key_prefix=key_prefix)
@@ -70,6 +74,38 @@ def status_command(dataset_id: str, key_prefix: Optional[str] = None) -> None:
 
     # Display the table
     console.print(table)
+
+    # Write CSV output if requested
+    if csv_path:
+        try:
+            import csv
+
+            with open(csv_path, "w", newline="") as csvfile:
+                csvwriter = csv.writer(csvfile)
+                # Write header
+                csvwriter.writerow(["Stage", "Count", "Missing"])
+                # Write data rows
+                csvwriter.writerow(
+                    [S3Stage.DOCUMENTS.value, counts.get(S3Stage.DOCUMENTS, 0), ""]
+                )
+                csvwriter.writerow(
+                    [
+                        S3Stage.REPRESENTATIONS.value,
+                        counts.get(S3Stage.REPRESENTATIONS, 0),
+                        len(missing_representation),
+                    ]
+                )
+                csvwriter.writerow(
+                    [
+                        S3Stage.PARQUET.value,
+                        counts.get(S3Stage.PARQUET, 0),
+                        len(missing_parquet),
+                    ]
+                )
+
+            console.print(f"[green]CSV output written to {csv_path}[/green]")
+        except Exception as e:
+            console.print(f"[red]Error writing CSV: {e}[/red]")
 
 
 def list_datasets_command() -> None:
@@ -132,6 +168,21 @@ def sublist_command(dataset_id: str, source_stage: Optional[str] = None) -> None
 
     # List the subfolders
     list_dataset_subfolders(dataset_id=dataset_id, source_stage=stage)
+
+
+def substatus_command(
+    dataset_id: str, subfolder: str, csv_path: Optional[str] = None
+) -> None:
+    """
+    Get the status (document counts and missing documents) for a specific subfolder.
+
+    Args:
+        dataset_id (str): Dataset ID
+        subfolder (str): Subfolder within the dataset to check
+        csv_path (Optional[str]): Optional path to save results as CSV
+    """
+    # Get status for the subfolder
+    get_subfolder_status(dataset_id=dataset_id, subfolder=subfolder, csv_path=csv_path)
 
 
 def process_command(
@@ -562,11 +613,24 @@ def main() -> None:
         help="Source stage to list from (if not specified, lists all stages)",
     )
 
+    # Substatus command (show status for a specific subfolder)
+    substatus_parser = subparsers.add_parser(
+        "substatus", help="Show status for a specific subfolder in a dataset"
+    )
+    substatus_parser.add_argument("dataset_id", help="Dataset ID")
+    substatus_parser.add_argument("subfolder", help="Subfolder within the dataset")
+    substatus_parser.add_argument(
+        "--csv", dest="csv_path", help="Path to save results as CSV file"
+    )
+
     # Status command
     status_parser = subparsers.add_parser("status", help="Show dataset status")
     status_parser.add_argument("dataset_id", help="Dataset ID")
     status_parser.add_argument(
         "--key-prefix", help="Key prefix to filter objects within the dataset"
+    )
+    status_parser.add_argument(
+        "--csv", dest="csv_path", help="Path to save results as CSV file"
     )
 
     # Process command
@@ -792,8 +856,10 @@ def main() -> None:
         list_datasets_command()
     elif args.command == "sublist":
         sublist_command(args.dataset_id, args.source_stage)
+    elif args.command == "substatus":
+        substatus_command(args.dataset_id, args.subfolder, args.csv_path)
     elif args.command == "status":
-        status_command(args.dataset_id, args.key_prefix)
+        status_command(args.dataset_id, args.key_prefix, args.csv_path)
     elif args.command == "process":
         process_command(
             args.dataset_id,

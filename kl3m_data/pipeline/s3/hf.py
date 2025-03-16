@@ -36,6 +36,7 @@ from kl3m_data.utils.s3_utils import (
     get_object_bytes,
     get_s3_client,
     list_common_prefixes,
+    iter_prefix,
 )
 from kl3m_data.utils.parquet_utils import deserialize_document_bytes
 
@@ -437,6 +438,143 @@ def list_dataset_subfolders(
 
     # Return results for programmatic use
     return results
+
+
+def get_subfolder_status(
+    dataset_id: str,
+    subfolder: str,
+    csv_path: Optional[str] = None,
+) -> Dict[S3Stage, int]:
+    """
+    Get the document counts for a specific subfolder across all stages.
+
+    Args:
+        dataset_id: Dataset ID to check
+        subfolder: Subfolder within the dataset to check
+        csv_path: Optional path to save results as CSV
+
+    Returns:
+        Dict[S3Stage, int]: Dictionary mapping each stage to the number of documents
+    """
+    # Initialize S3 client
+    s3_client = get_s3_client()
+    console = Console()
+    bucket = "data.kl3m.ai"
+
+    # Get counts for each stage
+    counts = {}
+    missing_representations = 0
+    missing_parquet = 0
+
+    # Clean subfolder (remove trailing slash if present)
+    clean_subfolder = subfolder.rstrip("/")
+
+    # Track document IDs for calculating missing
+    document_ids = set()
+    representation_ids = set()
+    parquet_ids = set()
+
+    # Process each stage
+    for stage in [S3Stage.DOCUMENTS, S3Stage.REPRESENTATIONS, S3Stage.PARQUET]:
+        # Define the bucket and prefix
+        prefix = f"{stage.value}/{dataset_id}/{clean_subfolder}/"
+
+        # Count all objects with this prefix
+        count = 0
+
+        # Using set for tracking unique IDs
+        doc_id_set = set()
+
+        for key in iter_prefix(s3_client, bucket, prefix):
+            count += 1
+
+            # Extract document ID for missing calculation
+            # The ID is the filename without extension
+            filename = key.split("/")[-1]
+            doc_id = filename.split(".")[0] if "." in filename else filename
+            doc_id_set.add(doc_id)
+
+        # Store the count and IDs
+        counts[stage] = count
+
+        # Store IDs for missing calculation
+        if stage == S3Stage.DOCUMENTS:
+            document_ids = doc_id_set
+        elif stage == S3Stage.REPRESENTATIONS:
+            representation_ids = doc_id_set
+        elif stage == S3Stage.PARQUET:
+            parquet_ids = doc_id_set
+
+    # Calculate missing documents
+    missing_representations = len(document_ids - representation_ids)
+    missing_parquet = len(representation_ids - parquet_ids)
+
+    # Create a table for display
+    table = Table(title=f"Subfolder Status: {dataset_id}/{clean_subfolder}")
+
+    # Add columns
+    table.add_column("Stage", style="cyan")
+    table.add_column("Count", style="green")
+    table.add_column("Missing", style="red")
+
+    # Add rows
+    table.add_row(S3Stage.DOCUMENTS.value, str(counts.get(S3Stage.DOCUMENTS, 0)), "")
+    table.add_row(
+        S3Stage.REPRESENTATIONS.value,
+        str(counts.get(S3Stage.REPRESENTATIONS, 0)),
+        str(missing_representations),
+    )
+    table.add_row(
+        S3Stage.PARQUET.value,
+        str(counts.get(S3Stage.PARQUET, 0)),
+        str(missing_parquet),
+    )
+
+    # Display the table
+    console.print(table)
+
+    # Write CSV output if requested
+    if csv_path:
+        try:
+            import csv
+
+            with open(csv_path, "w", newline="") as csvfile:
+                csvwriter = csv.writer(csvfile)
+                # Write header
+                csvwriter.writerow(["Stage", "Count", "Missing"])
+                # Write data rows
+                csvwriter.writerow(
+                    [S3Stage.DOCUMENTS.value, counts.get(S3Stage.DOCUMENTS, 0), ""]
+                )
+                csvwriter.writerow(
+                    [
+                        S3Stage.REPRESENTATIONS.value,
+                        counts.get(S3Stage.REPRESENTATIONS, 0),
+                        missing_representations,
+                    ]
+                )
+                csvwriter.writerow(
+                    [
+                        S3Stage.PARQUET.value,
+                        counts.get(S3Stage.PARQUET, 0),
+                        missing_parquet,
+                    ]
+                )
+
+            console.print(f"[green]CSV output written to {csv_path}[/green]")
+        except Exception as e:
+            console.print(f"[red]Error writing CSV: {e}[/red]")
+
+    # Also return the stats for programmatic use
+    stats = {
+        "counts": counts,
+        "missing": {
+            S3Stage.REPRESENTATIONS: missing_representations,
+            S3Stage.PARQUET: missing_parquet,
+        },
+    }
+
+    return stats
 
 
 def push_to_huggingface(
