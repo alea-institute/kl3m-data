@@ -7,6 +7,7 @@ and supports parallel processing for efficient data retrieval and transformation
 """
 
 # imports
+import gzip
 import json
 import os
 import threading
@@ -281,7 +282,7 @@ def export_to_jsonl(
 
                 # Write to output file
                 with output_lock:
-                    with open(output_path, "a", encoding="utf-8") as f:
+                    with gzip.open(output_path, "a", encoding="utf-8") as f:
                         f.write(json.dumps(result) + "\n")
 
                 # Update stats
@@ -303,7 +304,7 @@ def export_to_jsonl(
             return False
 
         # Create an empty output file
-        with open(output_path, "w", encoding="utf-8") as f:
+        with gzip.open(output_path, "w", encoding="utf-8") as f:
             pass
 
         # Process objects in parallel using a thread pool
@@ -375,7 +376,7 @@ def push_to_huggingface(
         # Use a temporary file approach for better reliability
         import tempfile
 
-        with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as temp_file:
+        with tempfile.NamedTemporaryFile(suffix=".jsonl.gz", delete=False) as temp_file:
             temp_path = temp_file.name
             console.print(
                 f"Exporting to temporary file {temp_path} before uploading to Hugging Face..."
