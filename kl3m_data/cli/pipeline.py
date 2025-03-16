@@ -16,7 +16,11 @@ from rich.progress import Progress
 # project imports
 from kl3m_data.logger import LOGGER
 from kl3m_data.pipeline.s3.dataset import DatasetPipeline
-from kl3m_data.pipeline.s3.hf import export_to_jsonl, push_to_huggingface
+from kl3m_data.pipeline.s3.hf import (
+    export_to_jsonl,
+    push_to_huggingface,
+    list_dataset_subfolders,
+)
 from kl3m_data.utils.s3_utils import get_s3_client, list_dataset_ids, S3Stage
 
 
@@ -110,6 +114,24 @@ def list_datasets_command() -> None:
 
     # Display the table
     console.print(table)
+
+
+def sublist_command(dataset_id: str, source_stage: Optional[str] = None) -> None:
+    """
+    List subfolders (top-level prefixes) inside a dataset across all stages or a specific stage.
+
+    Args:
+        dataset_id (str): Dataset ID
+        source_stage (Optional[str]): Source stage (documents, representations, or parquet)
+                                     If None, lists all stages
+    """
+    # Convert stage string to enum if provided
+    stage = None
+    if source_stage:
+        stage = S3Stage[source_stage.upper()]
+
+    # List the subfolders
+    list_dataset_subfolders(dataset_id=dataset_id, source_stage=stage)
 
 
 def process_command(
@@ -529,6 +551,17 @@ def main() -> None:
     # List datasets command
     list_parser = subparsers.add_parser("list", help="List all datasets")
 
+    # Sublist command (list subfolders inside a dataset)
+    sublist_parser = subparsers.add_parser(
+        "sublist", help="List subfolders inside a dataset"
+    )
+    sublist_parser.add_argument("dataset_id", help="Dataset ID")
+    sublist_parser.add_argument(
+        "--source-stage",
+        choices=["documents", "representations", "parquet"],
+        help="Source stage to list from (if not specified, lists all stages)",
+    )
+
     # Status command
     status_parser = subparsers.add_parser("status", help="Show dataset status")
     status_parser.add_argument("dataset_id", help="Dataset ID")
@@ -757,6 +790,8 @@ def main() -> None:
     # Execute command
     if args.command == "list":
         list_datasets_command()
+    elif args.command == "sublist":
+        sublist_command(args.dataset_id, args.source_stage)
     elif args.command == "status":
         status_command(args.dataset_id, args.key_prefix)
     elif args.command == "process":

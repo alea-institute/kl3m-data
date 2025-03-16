@@ -25,12 +25,18 @@ from rich.progress import (
     TaskProgressColumn,
     TimeElapsedColumn,
 )
+from rich.table import Table
 
 # project imports
 from kl3m_data.logger import LOGGER
 from kl3m_data.metrics.quality_metrics import get_metrics
 from kl3m_data.pipeline.s3.dataset import DatasetPipeline
-from kl3m_data.utils.s3_utils import S3Stage, get_object_bytes, get_s3_client
+from kl3m_data.utils.s3_utils import (
+    S3Stage,
+    get_object_bytes,
+    get_s3_client,
+    list_common_prefixes,
+)
 from kl3m_data.utils.parquet_utils import deserialize_document_bytes
 
 
@@ -339,6 +345,98 @@ def export_to_jsonl(
         )
 
         return exported_count
+
+
+def list_dataset_subfolders(
+    dataset_id: str,
+    source_stage: Optional[S3Stage] = None,
+) -> Dict[S3Stage, List[str]]:
+    """
+    List all top-level subfolders (prefixes) inside a dataset.
+    If source_stage is None, lists subfolders for all stages.
+
+    Args:
+        dataset_id: Dataset ID to list subfolders for
+        source_stage: Which pipeline stage to check (DOCUMENTS, REPRESENTATIONS, or PARQUET)
+                     If None, lists all stages
+
+    Returns:
+        Dict[S3Stage, List[str]]: Dictionary mapping each stage to its list of subfolder names
+    """
+    # Initialize S3 client
+    s3_client = get_s3_client()
+    console = Console()
+    bucket = "data.kl3m.ai"
+
+    # Determine which stages to list
+    stages_to_list = (
+        [source_stage]
+        if source_stage
+        else [S3Stage.DOCUMENTS, S3Stage.REPRESENTATIONS, S3Stage.PARQUET]
+    )
+
+    # Dictionary to store results for all stages
+    results = {}
+
+    # Process each stage
+    for stage in stages_to_list:
+        # Define the bucket and prefix
+        prefix = f"{stage.value}/{dataset_id}/"
+
+        # Get all common prefixes (folders) within the dataset
+        subfolders = list_common_prefixes(s3_client, bucket, prefix)
+
+        # Extract just the folder names (without the full prefix path)
+        stage_results = []
+        for folder in subfolders:
+            # Remove the stage/dataset_id/ part from the folder
+            if folder.startswith(prefix):
+                # Extract just the subfolder name (removing trailing slash)
+                subfolder_name = folder[len(prefix) :].rstrip("/")
+                if subfolder_name:  # Only add non-empty names
+                    stage_results.append(subfolder_name)
+
+        # Store results for this stage
+        results[stage] = sorted(stage_results)
+
+    # If only one stage was requested, display a simple table for that stage
+    if source_stage:
+        table = Table(title=f"Subfolders in {dataset_id} ({source_stage.value})")
+        table.add_column("Subfolder", style="cyan")
+
+        # Add rows
+        for subfolder in results[source_stage]:
+            table.add_row(subfolder)
+
+        # Display the table
+        console.print(table)
+    else:
+        # Get all unique subfolder names across all stages
+        all_subfolders = set()
+        for stage_results in results.values():
+            all_subfolders.update(stage_results)
+
+        # Create a table with all stages
+        table = Table(title=f"Subfolders in {dataset_id} (All Stages)")
+        table.add_column("Subfolder", style="cyan")
+        table.add_column("Documents", style="green")
+        table.add_column("Representations", style="green")
+        table.add_column("Parquet", style="green")
+
+        # Add rows
+        for subfolder in sorted(all_subfolders):
+            table.add_row(
+                subfolder,
+                "✓" if subfolder in results[S3Stage.DOCUMENTS] else "✗",
+                "✓" if subfolder in results[S3Stage.REPRESENTATIONS] else "✗",
+                "✓" if subfolder in results[S3Stage.PARQUET] else "✗",
+            )
+
+        # Display the table
+        console.print(table)
+
+    # Return results for programmatic use
+    return results
 
 
 def push_to_huggingface(
