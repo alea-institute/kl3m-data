@@ -1,0 +1,75 @@
+\section{PACER Dockets}
+\label{appendix:dockets}
+
+This appendix provides details about the PACER Dockets dataset, including its collection methodology, data statistics, and examples of the data. PACER (Public Access to Court Electronic Records) is the electronic system that provides access to case and docket information from federal appellate, district, and bankruptcy courts.
+
+\subsection{Dataset Overview}
+
+The PACER Dockets dataset contains docket sheets from federal courts across the United States. These docket sheets serve as the official records of court proceedings, containing chronological listings of all events and filings in a case. The dataset includes dockets from district courts, bankruptcy courts, and appellate courts, providing a comprehensive record of federal court activity and procedural history.
+
+The dockets provide essential metadata about federal cases, including:
+\begin{itemize}
+  \item Case numbers and titles
+  \item Judge assignments
+  \item Filing dates
+  \item Party information (plaintiffs, defendants, attorneys)
+  \item Chronological listing of all events and filings
+  \item Case status and outcomes
+\end{itemize}
+
+\subsection{Data Processing Statistics}
+
+Based on the counts files in the KL3M project, the PACER Dockets dataset has been processed through multiple stages:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|r|}
+\hline
+\textbf{Processing Stage} & \textbf{Number of Documents} \\
+\hline
+Documents (Initial Collection) & 641,964 \\
+Representations (Processed) & 641,961 \\
+Parquet (Final Format) & 641,945 \\
+\hline
+\end{tabular}
+\caption{PACER Dockets Dataset Document Counts by Processing Stage}
+\label{tab:dockets_counts}
+\end{table}
+
+As shown in Table \ref{tab:dockets_counts}, the processing pipeline for the PACER Dockets dataset maintained high consistency across stages. From the initial collection to the representation stage, only 3 documents were lost (99.9995\% retention). The final parquet conversion stage had a minimal additional loss of 16 documents. Overall, 99.997\% of the originally collected documents were successfully processed through the entire pipeline, demonstrating the robustness of the processing methodology for this dataset.
+
+\subsection{Collection Methodology}
+
+The PACER Dockets dataset was collected from the CourtListener and Internet Archive's joint effort to make federal court records freely accessible. The collection process involved the following steps:
+
+\begin{enumerate}
+  \item Obtaining the source data file: The dataset retrieves a compressed CSV file (\texttt{dockets-2024-08-31.csv.bz2}) from the CourtListener's S3 storage bucket (\texttt{com-courtlistener-storage}). This file contains metadata about hundreds of thousands of federal docket sheets.
+  
+  \item Filtering and processing records: The source code filters the data to include only records with valid Internet Archive JSON URLs (records containing a \texttt{filepath\_ia\_json} field with a valid HTTP URL). Each record in the CSV contains extensive metadata about a court case, including:
+  \begin{itemize}
+    \item Court identifiers (e.g., \texttt{flnd} for Florida Northern District)
+    \item Case numbers and PACER case IDs
+    \item Case names (e.g., \texttt{Salvador v. Morgan})
+    \item Filing and termination dates
+    \item Nature of suit and cause of action
+    \item Judge assignments
+    \item Jurisdiction information
+  \end{itemize}
+  
+  \item Downloading and processing JSON data: For each valid record, the system:
+  \begin{itemize}
+    \item Downloads the complete docket sheet in JSON format from the Internet Archive URL
+    \item Creates a document record with the docket data
+    \item Assigns a unique ID based on the JSON filename
+    \item Preserves all original metadata in the document's \texttt{extra} field
+    \item Calculates a cryptographic hash (blake2b) of the content for integrity verification
+    \item Uploads the document to the KL3M storage system
+  \end{itemize}
+\end{enumerate}
+
+The collection methodology leverages public domain federal court records made accessible through CourtListener and the Internet Archive. As noted in the source code, these docket entries are "Not subject to copyright under 17 U.S.C. 105 and provided under CC0 by CourtListener/IA." This status ensures that the entire dataset is freely available for research and analysis without copyright restrictions.
+
+The dataset specifically focuses on the docket sheets themselves, which provide the procedural history and metadata of cases, rather than the full text of court documents (which are collected separately in the RECAP Documents dataset).
+
+\subsection{Content Examples}
+% TODO: Add representative examples of docket entries

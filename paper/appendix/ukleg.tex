@@ -1,0 +1,157 @@
+\section{UK Legislation}
+\label{appendix:ukleg}
+
+This appendix provides details about the UK Legislation dataset, including its collection methodology, data statistics, and examples of the data. The UK Legislation dataset consists of primary and secondary legislation from the United Kingdom, published on the legislation.gov.uk website maintained by The National Archives.
+
+\subsection{Processing Statistics}
+
+Table~\ref{table:ukleg-stats} shows the processing statistics for the UK Legislation dataset.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|r|r|r|}
+\hline
+\textbf{Processing Stage} & \textbf{Document Count} & \textbf{\% of Documents} & \textbf{\% of Initial} \\
+\hline
+Documents (Initial Collection) & 219,190 & 100\% & 100\% \\
+Representations (Processed) & 219,190 & 100\% & 100\% \\
+Parquet (Final Format) & 219,190 & 100\% & 100\% \\
+\hline
+\end{tabular}
+\caption{Processing statistics for the UK Legislation dataset.}
+\label{table:ukleg-stats}
+\end{table}
+
+The UK Legislation dataset shows a perfect 100\% processing success rate across all stages. This exceptional conversion rate indicates the high quality and consistency of the source data, which is provided in a standardized HTML format that processes extremely well through the KL3M pipeline.
+
+\subsection{Dataset Coverage}
+
+The dataset includes various types of UK legislation:
+
+\begin{itemize}
+  \item \textbf{Acts of Parliament} -- Primary legislation enacted by the UK Parliament
+  \item \textbf{Statutory Instruments} -- Secondary legislation made under powers delegated by Acts of Parliament
+  \item \textbf{Statutory Rules and Orders} -- Historical statutory instruments predating 1948
+  \item \textbf{UK Statutory Rules} -- Northern Ireland statutory rules
+  \item \textbf{UK Church Instruments} -- Measures and instruments related to the Church of England
+  \item \textbf{UK Local Acts} -- Acts that apply to specific localities or entities rather than the general public
+\end{itemize}
+
+The dataset covers legislation dating back to 1267, with comprehensive coverage of legislation enacted after 1988. Older legislation is added to the dataset as it is digitized by The National Archives.
+
+\subsection{Collection Methodology}
+
+The UK Legislation dataset is collected from the official legislation.gov.uk archive, which is maintained by The National Archives of the UK. The collection methodology involves:
+
+\begin{enumerate}
+    \item Accessing the public bulk data package provided by The National Archives, specifically the "revised-all-versions-html.zip" archive available at \texttt{http://leggovuk-ldn.s3-website.eu-west-2.amazonaws.com/texts/revised-all-versions/html/}
+    
+    \item Processing each HTML file in the archive through the following steps:
+    \begin{itemize}
+        \item Checking if the document already exists in the collection to avoid duplication
+        \item Extracting the title from the HTML using regular expression pattern matching
+        \item Generating a blake2b hash of the document content for integrity verification
+        \item Creating a Document object with metadata including unique identifier, title, format, source, and size
+        \item Storing the document in the KL3M collection
+    \end{itemize}
+\end{enumerate}
+
+The collection process preserves the original HTML format of the legislation, which includes structural elements that facilitate navigation and comprehension of the legal text. This approach maintains the hierarchical organization of legislation (parts, chapters, sections, schedules) and preserves any embedded formatting or reference structures.
+
+\subsection{Document Format and Structure}
+
+UK legislation in this dataset is stored in HTML format, which provides several advantages:
+
+\begin{enumerate}
+    \item \textbf{Structured Content} -- HTML markup preserves the hierarchical structure of legislation, including divisions such as parts, chapters, sections, and subsections
+    
+    \item \textbf{Embedded Metadata} -- The HTML includes important metadata like the legislation title, year, type, and number
+    
+    \item \textbf{Cross-References} -- Hyperlinks within the documents maintain cross-references to other legislation or specific sections
+    
+    \item \textbf{Formatting} -- Legal formatting conventions such as indentation, numbering, and emphasis are preserved
+\end{enumerate}
+
+The HTML documents follow a consistent structure based on the legislation.gov.uk schema, making them suitable for automated parsing and analysis. This consistency is reflected in the perfect processing rate of 100\% across all stages of the KL3M pipeline.
+
+\subsection{Legal Status}
+
+The UK Legislation dataset is made available under the Open Government Licence v3.0, which is the UK equivalent of a Creative Commons Attribution License. Key aspects of this license include:
+
+\begin{enumerate}
+    \item \textbf{Free Reuse} -- Permission to copy, publish, distribute, transmit, and adapt the information
+    
+    \item \textbf{Attribution Requirement} -- Users must acknowledge the source of the information
+    
+    \item \textbf{Crown Copyright} -- The underlying legislation is subject to Crown copyright, which is explicitly mentioned in the license statement
+\end{enumerate}
+
+The Open Government Licence applies to most UK legislation data, though there may be some third-party content or specific exceptions noted in individual documents. The license explicitly states "All content is available under the Open Government Licence v3.0 except where otherwise stated © Crown copyright."
+
+\subsection{Implementation Details}
+
+The UK Legislation collection is implemented using Python with several key technical components:
+
+\begin{enumerate}
+    \item \texttt{zipfile} library for processing the bulk archive file
+    
+    \item Regular expression (\texttt{re}) module for extracting titles and other metadata from HTML content
+    
+    \item \texttt{hashlib.blake2b} for cryptographic hashing and integrity verification
+    
+    \item Custom document processing pipeline for standardizing metadata and storage
+\end{enumerate}
+
+The collection code includes error handling for various potential issues, such as malformed HTML or encoding problems. The implementation specifically targets HTML files within the zip archive, filtering for filenames containing ".htm" to exclude any supplementary materials.
+
+\subsection{Significance and Research Applications}
+
+The UK Legislation dataset offers several unique research opportunities:
+
+\begin{enumerate}
+    \item \textbf{Comparative Legal Studies}
+    \begin{itemize}
+        \item Comparing UK legislative approaches with those in other jurisdictions
+        \item Analyzing differences between common law and civil law systems
+        \item Studying the influence of UK legislation on Commonwealth legal systems
+    \end{itemize}
+    
+    \item \textbf{Historical Legal Research}
+    \begin{itemize}
+        \item Tracking the evolution of legal language and concepts over centuries
+        \item Studying historical laws dating back to the 13th century
+        \item Analyzing legislative responses to historical events and social changes
+    \end{itemize}
+    
+    \item \textbf{Legal NLP Applications}
+    \begin{itemize}
+        \item Training models on British legal language and terminology
+        \item Developing tools for automated statutory interpretation
+        \item Creating legal question-answering systems for UK law
+    \end{itemize}
+    
+    \item \textbf{Post-Brexit Legal Analysis}
+    \begin{itemize}
+        \item Studying the divergence of UK law from EU regulations after Brexit
+        \item Analyzing legislation related to the UK's withdrawal from the European Union
+        \item Tracking the development of a post-EU legal framework
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Content Examples}
+
+Representative examples of UK legislation in this dataset include:
+
+\begin{enumerate}
+    \item \textbf{Magna Carta (1297)} -- One of the oldest documents in the collection, this foundational text established principles of due process and limitations on royal power.
+    
+    \item \textbf{Human Rights Act 1998} -- Incorporated the European Convention on Human Rights into UK domestic law, representing a significant constitutional development.
+    
+    \item \textbf{Companies Act 2006} -- One of the longest acts of Parliament, governing the formation and operation of companies in the UK.
+    
+    \item \textbf{European Union (Withdrawal) Act 2018} -- Legislation enabling Brexit and addressing the incorporation of EU law into UK domestic law.
+    
+    \item \textbf{Coronavirus Act 2020} -- Emergency legislation responding to the COVID-19 pandemic, demonstrating modern UK legislative responses to health crises.
+\end{enumerate}
+
+Each document contains the full text of the legislation in HTML format, preserving the original structure, formatting, and embedded references.

@@ -1,0 +1,103 @@
+\section{SEC EDGAR Database}
+\label{appendix:edgar}
+
+This appendix provides details about the SEC EDGAR Database dataset, including its collection methodology, data statistics, and examples of the data. The Electronic Data Gathering, Analysis, and Retrieval (EDGAR) system is the primary system for companies and individuals to submit required forms and documents to the U.S. Securities and Exchange Commission (SEC).
+
+\subsection{Dataset Overview}
+
+The EDGAR dataset contains corporate filings submitted to the U.S. Securities and Exchange Commission (SEC) under various securities laws including the Securities Act of 1933, the Securities Exchange Act of 1934, the Trust Indenture Act of 1939, and the Investment Company Act of 1940. These filings include annual reports (10-K), quarterly reports (10-Q), registration statements, prospectuses, proxy statements, and various other corporate disclosures required by federal securities laws.
+
+The dataset provides a comprehensive repository of public company disclosures dating back to 1996, serving as a critical resource for financial research, regulatory compliance analysis, and corporate transparency studies. The EDGAR archive is particularly valuable as it contains standardized corporate financial information across thousands of public companies over multiple decades.
+
+\subsection{Data Processing Statistics}
+
+Based on the counts files in the KL3M project, the EDGAR dataset has been processed through multiple stages:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|r|}
+\hline
+\textbf{Processing Stage} & \textbf{Number of Documents} \\
+\hline
+Documents (Initial Collection) & 74,063,501 \\
+Representations (Processed) & 30,474,244 \\
+Parquet (Final Format) & 44,768,118 \\
+\hline
+\end{tabular}
+\caption{EDGAR Dataset Document Counts by Processing Stage}
+\label{tab:edgar_counts}
+\end{table}
+
+As shown in Table \ref{tab:edgar_counts}, the EDGAR dataset exhibits some interesting patterns through the processing pipeline. The initial collection contained over 74 million documents, of which approximately 41\% were successfully converted to representations. However, the parquet format shows a higher document count than the representations stage, suggesting that some documents may have been processed through alternative pipelines or that the parquet conversion included additional fields or transformations that resulted in multiple parquet files per original document.
+
+The large difference between the initial document count and the representations count likely reflects the complex nature of EDGAR filings, which often contain multiple document types, some of which may be difficult to process (like certain PDF formats, image-based documents, or proprietary formats) or may have been intentionally filtered during processing.
+
+\subsection{Collection Methodology}
+
+The EDGAR dataset was collected directly from the SEC's EDGAR system using their public API. The collection process involved several sophisticated steps:
+
+\begin{enumerate}
+  \item \textbf{Daily Feed Collection}: The system downloads daily feed files from the SEC EDGAR archives, going back to 1996 (specified by the \texttt{EDGAR\_MIN\_DATE} constant). Each feed is a tar.gz archive containing multiple "nc" (News Condensed) files.
+  
+  \item \textbf{Feed Processing}: For each daily feed archive, the system:
+  \begin{itemize}
+    \item Extracts all member files from the tar.gz archive
+    \item Processes each .nc file containing multiple submissions
+  \end{itemize}
+  
+  \item \textbf{Submission Parsing}: Within each .nc file, the system:
+  \begin{itemize}
+    \item Identifies submission blocks using regex pattern matching
+    \item Extracts metadata from the submission header
+    \item Identifies individual document blocks within each submission
+  \end{itemize}
+  
+  \item \textbf{Document Extraction}: For each document in a submission:
+  \begin{itemize}
+    \item Extracts document metadata (type, sequence, filename, description)
+    \item Extracts the document content from between \texttt{<TEXT>} tags
+    \item Handles UUEncoded content by decoding when necessary
+  \end{itemize}
+  
+  \item \textbf{Document Creation}: For each extracted document, a Document object is created with extensive metadata:
+  \begin{itemize}
+    \item Unique ID in the format \texttt{cik/accession\_number/sequence}
+    \item URL to the document on the SEC website
+    \item Document content and size
+    \item Content hash for integrity verification
+    \item MIME type based on file extension
+    \item Document title from the description field
+    \item Source name from filer/issuer/subject company information
+    \item SEC as the publisher
+    \item Filing date
+    \item Form types as subjects
+    \item Complete submission and document metadata in the extra field
+  \end{itemize}
+  
+  \item \textbf{Storage}: Each document is uploaded to the KL3M storage system.
+\end{enumerate}
+
+The collection process includes extensive error handling to manage the variations in document formats and metadata structures found in the EDGAR archive. It also carefully maintains the SEC-specific metadata hierarchy, preserving the relationships between companies, submissions, and documents.
+
+\subsection{Legal Status}
+
+As noted in the source code, the EDGAR dataset is "Generally accepted to available for free use and distribution" under various securities laws including Sections 19 and 20 of the Securities Act of 1933, Section 21 of the Securities Exchange Act of 1934, Section 321 of the Trust Indenture Act of 1939, Section 42 of the Investment Company Act of 1940, Section 209 of the Investment Advisers Act of 1940, and Title 17 of the Code of Federal Regulations, Section 202.5.
+
+The code does note the ISDA v. Socratek case as offering some potentially countervailing guidance, but the general understanding is that these materials are not subject to copyright and are available for public use as records of the U.S. government.
+
+\subsection{Content Types}
+
+The EDGAR dataset includes a wide variety of document types, reflecting the diverse nature of corporate filings:
+
+\begin{itemize}
+  \item \textbf{Annual Reports (10-K, 10-KSB)} - Comprehensive reports on a company's financial performance
+  \item \textbf{Quarterly Reports (10-Q, 10-QSB)} - Updates on a company's financial status for a fiscal quarter
+  \item \textbf{Registration Statements (S-1, S-3, etc.)} - Filings for new security offerings
+  \item \textbf{Beneficial Ownership Reports (Schedule 13D, 13G)} - Reports of ownership of more than 5\% of a company
+  \item \textbf{Insider Trading Reports (Form 3, 4, 5)} - Reports of insider transactions
+  \item \textbf{Proxy Statements (DEF 14A)} - Information provided to shareholders before annual meetings
+  \item \textbf{Current Reports (8-K)} - Reports of significant events between regular filings
+  \item \textbf{Foreign Company Reports (20-F, 40-F)} - Annual reports for foreign companies
+\end{itemize}
+
+The dataset preserves both the structured metadata about these filings and the full content of the documents themselves, enabling comprehensive analysis of corporate disclosures across time and across different regulatory requirements.

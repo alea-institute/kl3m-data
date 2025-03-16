@@ -1,0 +1,189 @@
+\section{United States Code}
+\label{appendix:usc}
+
+This appendix provides details about the United States Code dataset, which contains the official codification of federal statutory law in the United States, as prepared by the Office of the Law Revision Counsel (OLRC) of the U.S. House of Representatives.
+
+\subsection{Processing Statistics}
+
+Table~\ref{table:usc-stats} shows the processing statistics for the United States Code dataset.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|r|r|r|}
+\hline
+\textbf{Processing Stage} & \textbf{Document Count} & \textbf{\% of Documents} & \textbf{\% of Initial} \\
+\hline
+Documents (Initial Collection) & 69,391 & 100\% & 100\% \\
+Representations (Processed) & 69,391 & 100\% & 100\% \\
+Parquet (Final Format) & 69,391 & 100\% & 100\% \\
+\hline
+\end{tabular}
+\caption{Processing statistics for the United States Code dataset.}
+\label{table:usc-stats}
+\end{table}
+
+The United States Code dataset shows a perfect 100\% processing success rate across all stages, from initial collection to final format. This exceptional conversion rate reflects the highly standardized and structured nature of the source data, which is provided by the OLRC in well-formed XHTML format.
+
+\subsection{Dataset Coverage}
+
+The United States Code dataset covers the entirety of federal statutory law in the United States, organized into titles according to subject matter. The dataset includes:
+
+\begin{itemize}
+  \item All 54 titles of the United States Code, including both positive law titles (those enacted as law by Congress) and non-positive law titles (editorial compilations not enacted as law)
+  
+  \item The most current version of the Code based on the specified release point (Congress 118, Public Law 66)
+  
+  \item All sections, subsections, paragraphs, and other structural elements of each title
+  
+  \item Notes, references, and other editorial enhancements added by the OLRC
+\end{itemize}
+
+The dataset represents a comprehensive snapshot of federal statutory law as of the release point, capturing the state of all federal statutes as edited and compiled by the OLRC.
+
+\subsection{Collection Methodology}
+
+The United States Code dataset is collected directly from the official U.S. House of Representatives website maintained by the OLRC. The collection methodology involves:
+
+\begin{enumerate}
+    \item Identifying the current release point of the United States Code, specified by Congress number (e.g., 118) and Public Law number (e.g., 66)
+    
+    \item For each of the 54 titles, downloading the corresponding ZIP archive containing XHTML files from the release point URL: \texttt{https://uscode.house.gov/download/releasepoints/us/pl/[congress]/[public\_law]/htm\_usc[title]@[congress]-[public\_law].zip}
+    
+    \item Processing each ZIP archive to extract individual document fragments, which represent sections or other units of the Code
+    
+    \item For each document fragment:
+    \begin{itemize}
+        \item Parsing the HTML to extract embedded metadata from comment tags (documentid, itempath, expcite, etc.)
+        \item Extracting the document title and section headings
+        \item Creating a Document object with comprehensive metadata
+        \item Generating a unique temporal ID based on congress, public law, and document ID
+        \item Computing a blake2b hash of the content for integrity verification
+        \item Storing the document with its metadata in the KL3M collection
+    \end{itemize}
+\end{enumerate}
+
+This methodical approach ensures that each section of the United States Code is accurately captured with its full context and metadata, while maintaining the hierarchical structure and cross-references of the legal code.
+
+\subsection{Document Structure and Metadata}
+
+The United States Code documents in this dataset are stored in XHTML format and contain rich metadata embedded within HTML comments. Key metadata elements include:
+
+\begin{enumerate}
+    \item \textbf{Identification Information}
+    \begin{itemize}
+        \item documentid - Unique identifier for the document within the release point
+        \item itempath - Path in the hierarchical structure of the Code
+        \item itemsortkey - Key used for ordering items in the structure
+    \end{itemize}
+    
+    \item \textbf{Citation Information}
+    \begin{itemize}
+        \item expcite - Expanded citation information in a delimited format (e.g., "TITLE 1!@!CHAPTER 1!@!Sec. 101")
+        \item title - Numeric title of the United States Code
+    \end{itemize}
+    
+    \item \textbf{Temporal Information}
+    \begin{itemize}
+        \item congress - Congress number for the release point
+        \item public\_law - Public Law number for the release point
+        \item currentthrough - Text description of the currency date (e.g., "Most recent update through Public Law 118-66")
+    \end{itemize}
+    
+    \item \textbf{Additional Information}
+    \begin{itemize}
+        \item documentPDFPage - Corresponding page in the PDF version
+        \item usckey - Additional identification key used by the OLRC
+    \end{itemize}
+\end{enumerate}
+
+This rich metadata enables precise navigation, citation, and temporal tracking of each component of the United States Code, facilitating both legal research and computational analysis.
+
+\subsection{Legal Status}
+
+The United States Code dataset is in the public domain under 17 U.S.C. § 105, which specifies that works produced by the U.S. Government are not subject to copyright protection. The dataset metadata explicitly states: "Not subject to copyright under 17 U.S.C. 105."
+
+As an official government work prepared by the Office of the Law Revision Counsel of the U.S. House of Representatives, the content can be freely used, modified, and distributed without copyright restrictions. This public domain status makes the dataset particularly valuable for both research and practical applications.
+
+\subsection{Implementation Details}
+
+The United States Code collection is implemented using Python with several key technical components:
+
+\begin{enumerate}
+    \item \texttt{lxml.html} for parsing and processing the XHTML content
+    
+    \item \texttt{zipfile} library for handling the compressed archives from the OLRC
+    
+    \item Regular expression and string processing for extracting embedded metadata from HTML comments
+    
+    \item Custom classes (\texttt{USCDocument} and \texttt{USCReleaseFile}) for representing the hierarchical structure of the Code
+\end{enumerate}
+
+The implementation includes sophisticated document fragment detection and parsing to handle the nested structure of the legal code. It extracts document fragments by identifying HTML comment patterns that mark the beginning and end of individual document units.
+
+\subsection{Relationship to Other Legal Datasets}
+
+The United States Code dataset complements several other legal datasets in the KL3M collection:
+
+\begin{enumerate}
+    \item \textbf{Electronic Code of Federal Regulations} (Section~\ref{appendix:ecfr}) - While the USC contains federal statutory law enacted by Congress, the eCFR contains regulatory law promulgated by executive agencies
+    
+    \item \textbf{Federal Register} (Section~\ref{appendix:fr}) - Contains notices of proposed rulemaking and final rules that may eventually be codified in the USC or eCFR
+    
+    \item \textbf{Court Listener} (Section~\ref{appendix:cap}) - Contains judicial opinions that interpret the statutory law found in the USC
+    
+    \item \textbf{RECAP Archive} (Section~\ref{appendix:recap}) - Contains litigation documents that may involve disputes about the meaning and application of USC provisions
+\end{enumerate}
+
+Together, these datasets provide a comprehensive view of the U.S. federal legal system, from statutory law through regulatory implementation to judicial interpretation and application.
+
+\subsection{Research Applications}
+
+The United States Code dataset offers numerous research opportunities:
+
+\begin{enumerate}
+    \item \textbf{Legal Text Analysis}
+    \begin{itemize}
+        \item Studying the evolution of legal language and drafting styles over time
+        \item Measuring complexity and readability of federal statutes
+        \item Analyzing patterns in legislative organization and structure
+    \end{itemize}
+    
+    \item \textbf{Legal Information Retrieval}
+    \begin{itemize}
+        \item Developing search algorithms specifically tailored to statutory language
+        \item Creating citation graphs to track relationships between code sections
+        \item Building automated citation and reference tools
+    \end{itemize}
+    
+    \item \textbf{Legal AI Applications}
+    \begin{itemize}
+        \item Training models to understand and interpret statutory language
+        \item Building question-answering systems for legal research
+        \item Developing tools for automated statutory analysis and compliance
+    \end{itemize}
+    
+    \item \textbf{Legislative Studies}
+    \begin{itemize}
+        \item Analyzing the scope and organization of federal law
+        \item Studying the distribution of subject matter across titles
+        \item Tracking the impact of major legislative reforms
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Content Examples}
+
+Representative examples of significant sections in the United States Code include:
+
+\begin{enumerate}
+    \item \textbf{5 U.S.C. § 552} - The Freedom of Information Act, which provides public access to federal agency records
+    
+    \item \textbf{17 U.S.C. § 107} - The Fair Use provision of copyright law, which allows limited use of copyrighted material without permission
+    
+    \item \textbf{18 U.S.C. § 1030} - The Computer Fraud and Abuse Act, which criminalizes certain activities related to computers and networks
+    
+    \item \textbf{35 U.S.C. § 101} - Patentable subject matter definition in patent law
+    
+    \item \textbf{42 U.S.C. § 1983} - Civil action for deprivation of rights under color of law
+\end{enumerate}
+
+Each of these examples represents a section of the Code that has significant legal importance and demonstrates the range of subject matter covered in the dataset.

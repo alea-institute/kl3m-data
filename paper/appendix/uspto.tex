@@ -1,0 +1,216 @@
+\section{USPTO Granted Patents}
+\label{appendix:uspto}
+
+This appendix provides details about the USPTO Granted Patents dataset, which contains patents issued by the United States Patent and Trademark Office (USPTO). These patents represent the official grants of exclusive rights to inventors for their inventions, documenting technological innovation across various domains.
+
+\subsection{Processing Statistics}
+
+Table~\ref{table:uspto-stats} shows the processing statistics for the USPTO Granted Patents dataset.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|r|r|r|}
+\hline
+\textbf{Processing Stage} & \textbf{Document Count} & \textbf{\% of Documents} & \textbf{\% of Initial} \\
+\hline
+Documents (Initial Collection) & 6,586,666 & 100\% & 100\% \\
+Representations (Processed) & 6,413,833 & 97.4\% & 97.4\% \\
+Parquet (Final Format) & 6,413,827 & 97.4\% & 97.4\% \\
+\hline
+\end{tabular}
+\caption{Processing statistics for the USPTO Granted Patents dataset.}
+\label{table:uspto-stats}
+\end{table}
+
+The USPTO Granted Patents dataset demonstrates a high processing success rate of 97.4\% across all stages. This indicates the strong consistency and quality of the patent data, which is processed from structured formats into a standardized representation. The minimal loss between the Representations and Parquet stages (only 6 documents) further demonstrates the stability of the data through the processing pipeline.
+
+\subsection{Dataset Coverage}
+
+The USPTO Granted Patents dataset covers a comprehensive collection of patents granted by the United States Patent and Trademark Office. The dataset includes:
+
+\begin{itemize}
+  \item Patents from the USPTO's "Red Book" (full-text patents)
+  \item Both utility and design patents
+  \item Patents issued over multiple decades
+  \item Complete patent documents including title, abstract, background, and claims
+  \item Inventor information and publication details
+\end{itemize}
+
+This extensive coverage provides a broad view of technological innovation and intellectual property protection in the United States across various fields and industries.
+
+\subsection{Collection Methodology}
+
+The USPTO Granted Patents dataset is collected from the official USPTO Bulk Data Storage System. The collection methodology involves:
+
+\begin{enumerate}
+    \item Accessing patent grant archives from the USPTO's bulk data repository at \texttt{https://bulkdata.uspto.gov/data/patent/grant/redbook/fulltext/}
+    
+    \item Processing two main file formats:
+    \begin{itemize}
+        \item Older text-based patents with specific formatting markers (e.g., TTL, ABST, CLPR)
+        \item Newer XML-based patents using the International Common Element (ICE) XML format
+    \end{itemize}
+    
+    \item For each ZIP archive of patents:
+    \begin{itemize}
+        \item Extracting and parsing individual patent documents
+        \item Identifying document boundaries and extracting structured information
+        \item Converting the raw formats into a consistent markdown representation
+        \item Creating Document objects with standardized metadata
+        \item Computing blake2b hashes for content integrity verification
+        \item Storing the documents in the KL3M collection
+    \end{itemize}
+\end{enumerate}
+
+This systematic approach handles the evolution of USPTO data formats over time, ensuring consistent representation despite the underlying format changes in the source data.
+
+\subsection{Document Format and Processing}
+
+The collection process handles two distinct USPTO file formats:
+
+\begin{enumerate}
+    \item \textbf{Text Format Patents}
+    \begin{itemize}
+        \item Identified by markers like "TTL" (title), "ABPR" (abstract), "BSPR" (background), and "CLPR" (claims)
+        \item Parsed by segment-based text processing
+        \item Structured into a consistent document format with standardized sections
+    \end{itemize}
+    
+    \item \textbf{XML Format Patents (ICE Format)}
+    \begin{itemize}
+        \item Identified by XML tags like \texttt{<us-patent-grant>}
+        \item Parsed using the lxml library to extract structured content
+        \item Processed according to the USPTO's XML documentation schema
+    \end{itemize}
+\end{enumerate}
+
+Both formats are transformed into a unified markdown representation with consistent sections:
+
+\begin{verbatim}
+# Patent
+
+## Title
+{title}
+
+## Abstract
+{abstract}
+
+## Background
+{background}
+
+## Claims
+{claim[0]}
+{claim[1]}
+...
+\end{verbatim}
+
+This standardized format makes the patents easily readable and analyzable regardless of their original format, while preserving all essential information.
+
+\subsection{Metadata Structure}
+
+Each patent in the dataset includes rich metadata extracted from the original USPTO documents:
+
+\begin{enumerate}
+    \item \textbf{Identification Information}
+    \begin{itemize}
+        \item Patent number - The official USPTO patent number
+        \item Application number - The original application identifier
+        \item Issue date - The date when the patent was granted
+    \end{itemize}
+    
+    \item \textbf{Content Elements}
+    \begin{itemize}
+        \item Title - The official title of the invention
+        \item Abstract - A brief summary of the invention
+        \item Background - Detailed background and context for the invention
+        \item Claims - The formal legal claims defining the scope of patent protection
+    \end{itemize}
+    
+    \item \textbf{Attribution Information}
+    \begin{itemize}
+        \item Inventor names - The individuals credited with the invention
+        \item USPTO as the publishing authority
+    \end{itemize}
+\end{enumerate}
+
+This metadata enables precise searching, filtering, and analysis of the patent corpus based on various criteria including temporal, technical, and attribution dimensions.
+
+\subsection{Technical Implementation}
+
+The USPTO Granted Patents collection is implemented using Python with several key technical components:
+
+\begin{enumerate}
+    \item \texttt{zipfile} and \texttt{io} modules for handling compressed archives
+    \item \texttt{lxml.etree} for parsing XML-based patent documents
+    \item Text processing functions for handling older format patents
+    \item Adaptive parsing logic that detects and handles different document formats
+    \item Error handling to manage malformed or incomplete patent documents
+    \item Extended HTTP timeouts to accommodate large download files
+\end{enumerate}
+
+The implementation includes format detection logic that automatically determines the appropriate parsing method based on the presence of specific markers in the document. This flexibility allows the system to handle evolving patent formats over time.
+
+\subsection{Legal Status}
+
+The USPTO Granted Patents dataset is primarily in the public domain as specified in the metadata: "Public domain unless otherwise noted per 37 CFR 1.71 et seq." This regulatory citation refers to the Code of Federal Regulations provisions governing patent applications.
+
+While patent documents themselves are generally not subject to copyright protection, there are limited exceptions for certain content that might be included in patents, such as:
+
+\begin{itemize}
+    \item Previously copyrighted material included by reference
+    \item Specific artistic elements that might be part of design patents
+\end{itemize}
+
+However, the vast majority of patent content, including all technical descriptions, claims, and procedural elements, is in the public domain and freely available for research and analysis.
+
+\subsection{Research Applications}
+
+The USPTO Granted Patents dataset offers numerous research opportunities:
+
+\begin{enumerate}
+    \item \textbf{Innovation Analysis}
+    \begin{itemize}
+        \item Tracking technological trends over time
+        \item Identifying emerging fields and declining areas of innovation
+        \item Analyzing innovation networks through citation patterns
+    \end{itemize}
+    
+    \item \textbf{Natural Language Processing}
+    \begin{itemize}
+        \item Training specialized technical language models
+        \item Developing patent classification systems
+        \item Automating prior art searches
+    \end{itemize}
+    
+    \item \textbf{Economic Research}
+    \begin{itemize}
+        \item Studying the relationship between patent activity and economic growth
+        \item Analyzing corporate innovation strategies through patent portfolios
+        \item Measuring innovation output across geographic regions
+    \end{itemize}
+    
+    \item \textbf{Legal Studies}
+    \begin{itemize}
+        \item Analyzing patent claim language patterns
+        \item Studying the evolution of patent law through granted patents
+        \item Identifying patterns in successful patent applications
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Content Examples}
+
+Representative examples of patents in this dataset include:
+
+\begin{enumerate}
+    \item \textbf{US7844915B2} - Apple's "Application programming interfaces for scrolling operations" patent, a key patent in mobile touchscreen technology
+    
+    \item \textbf{US6285999B1} - Google's original PageRank patent, which formed the foundation for their search algorithm
+    
+    \item \textbf{US9019110B2} - Amazon's "System and method for long range and close proximity detection for light emitting diode (LED) illumination," part of their logistics automation technology
+    
+    \item \textbf{US9199369B1} - A robotics patent from Boston Dynamics for "Mobile robot" covering legged robot design
+    
+    \item \textbf{US9662741B2} - A 3D printing patent from Carbon, Inc. for "Continuous liquid interphase printing"
+\end{enumerate}
+
+Each patent contains the complete technical disclosure, including detailed background information, technical specifications, and formal legal claims defining the boundaries of the intellectual property protection.

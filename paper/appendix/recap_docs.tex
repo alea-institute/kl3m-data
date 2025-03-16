@@ -1,0 +1,143 @@
+\section{RECAP Documents}
+\label{appendix:recap_docs}
+
+This appendix provides details about the RECAP Documents dataset, which consists of document attachments from the federal judiciary's Public Access to Court Electronic Records (PACER) system collected by the Free Law Project's RECAP initiative. Unlike the main RECAP Archive (Section~\ref{appendix:recap}), which focuses on dockets and main filing documents, this dataset specifically contains file attachments in various formats.
+
+\subsection{Processing Statistics}
+
+Table~\ref{table:recap-docs-stats} shows the processing statistics for the RECAP Documents dataset.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|r|r|r|}
+\hline
+\textbf{Processing Stage} & \textbf{Document Count} & \textbf{\% of Documents} & \textbf{\% of Initial} \\
+\hline
+Documents (Initial Collection) & 1,863,733 & 100\% & 100\% \\
+Representations (Processed) & 1,691,658 & 90.8\% & 90.8\% \\
+Parquet (Final Format) & 1,691,655 & 90.8\% & 90.8\% \\
+\hline
+\end{tabular}
+\caption{Processing statistics for the RECAP Documents dataset.}
+\label{table:recap-docs-stats}
+\end{table}
+
+The RECAP Documents dataset shows a high processing success rate of 90.8\%, with only a minimal loss between the Representations and Parquet stages (only 3 documents). This indicates that most of the document attachments in various formats were successfully processed through the entire pipeline.
+
+\subsection{Collection Methodology}
+
+The RECAP Documents dataset is collected using a specialized data source class (\texttt{RECAPDocSource}) that interacts with the Free Law Project's public S3 storage. The collection methodology involves:
+
+\begin{enumerate}
+    \item Accessing the public Court Listener S3 bucket (\texttt{com-courtlistener-storage}) where RECAP documents are stored.
+    \item Iterating through objects in five specific prefix directories that represent different file formats:
+    \begin{itemize}
+        \item \texttt{doc/} - Microsoft Word documents
+        \item \texttt{docx/} - Microsoft Word Open XML documents
+        \item \texttt{mp3/} - Audio files
+        \item \texttt{pdf/} - PDF documents
+        \item \texttt{wpd/} - WordPerfect documents
+    \end{itemize}
+    \item Processing each document through the following steps:
+    \begin{itemize}
+        \item Checking if the document already exists in the collection to avoid duplication
+        \item Fetching the document content from the S3 bucket
+        \item Computing a blake2b hash of the document content for deduplication
+        \item Determining the appropriate MIME type based on the file extension
+        \item Creating a Document object with metadata including dataset ID, identifier, size, hash, format, source, and publisher
+        \item Storing the document in the KL3M collection
+    \end{itemize}
+\end{enumerate}
+
+Unlike the main RECAP Archive, which contains detailed court information and specific metadata extraction for PDF files, the RECAP Documents source focuses on preserving a wide variety of file formats with their original content. The collection process handles different file types appropriately by determining their MIME types and creating a standardized metadata structure.
+
+\subsection{Document Types and Content}
+
+The RECAP Documents dataset contains various file formats commonly used in legal proceedings:
+
+\begin{enumerate}
+    \item \textbf{Microsoft Word documents} (.doc, .docx)
+    \begin{itemize}
+        \item Legal briefs and memoranda
+        \item Written declarations and affidavits
+        \item Expert reports and analyses
+        \item Contractual documents and agreements
+        \item Correspondence submitted as evidence
+    \end{itemize}
+    
+    \item \textbf{PDF documents} (.pdf)
+    \begin{itemize}
+        \item Scanned exhibits and evidence
+        \item Technical reports and studies
+        \item Business records
+        \item Published articles submitted as references
+        \item Charts, graphs, and other visual evidence
+    \end{itemize}
+    
+    \item \textbf{Audio files} (.mp3)
+    \begin{itemize}
+        \item Recorded depositions
+        \item Hearing transcripts in audio format
+        \item Recorded phone conversations submitted as evidence
+        \item Audio evidence relevant to cases
+    \end{itemize}
+    
+    \item \textbf{WordPerfect documents} (.wpd)
+    \begin{itemize}
+        \item Legacy legal documents from courts or attorneys still using WordPerfect
+        \item Older filings that maintain their original format
+    \end{itemize}
+\end{enumerate}
+
+The wide variety of document formats makes this dataset particularly valuable for understanding the full scope of materials presented in federal court cases. Unlike many text-centric legal datasets, RECAP Documents captures the multimedia nature of modern legal proceedings.
+
+\subsection{Legal Status}
+
+The RECAP Documents dataset is made available under CC0/Public Domain designation. While court documents themselves are generally considered public domain under 17 U.S.C. § 105, it's important to note that:
+
+\begin{enumerate}
+    \item Attachments submitted by private parties may potentially contain copyrighted material
+    \item Once filed with a court, these documents become part of the public record and are accessible through PACER
+    \item The RECAP project's mission is to make these publicly accessible documents freely available without the access fees charged by the PACER system
+\end{enumerate}
+
+The Free Law Project, which maintains the RECAP Archive, asserts that "documents filed in federal courts are, with very few exceptions, in the public domain or available via fair use." However, researchers should be aware that some embedded third-party content within documents may have different copyright status than the court documents themselves.
+
+\subsection{Technical Implementation}
+
+The RECAP Documents collection is implemented using Python with the following key technical components:
+
+\begin{enumerate}
+    \item \texttt{hashlib.blake2b} for cryptographic hashing and deduplication
+    \item \texttt{mimetypes} library for determining appropriate MIME types
+    \item AWS S3 API for accessing the Court Listener storage bucket
+    \item Custom document processing pipeline that handles various file formats
+\end{enumerate}
+
+The collection code includes robust error handling to manage issues like network failures, corrupt files, or missing content. It also implements a tracking system to avoid duplicate documents across the collection process.
+
+\subsection{Relationship to Other Datasets}
+
+The RECAP Documents dataset complements several other datasets in the KL3M collection:
+
+\begin{enumerate}
+    \item \textbf{RECAP Archive} (Section~\ref{appendix:recap}) - Contains the main dockets and primary filing documents, while RECAP Documents contains the attachments and exhibits referenced in those filings
+    \item \textbf{Court Listener} (Section~\ref{appendix:cap}) - Focuses on court opinions, while RECAP Documents contains the supporting materials that may have informed those opinions
+    \item \textbf{Dockets} (Section~\ref{appendix:dockets}) - Contains structured information about case proceedings, while RECAP Documents provides the actual content of exhibits and attachments
+\end{enumerate}
+
+When used together, these datasets provide a comprehensive view of the U.S. federal court system, from procedural information to substantive legal arguments and supporting evidence.
+
+\subsection{Research Applications}
+
+The RECAP Documents dataset is particularly valuable for:
+
+\begin{enumerate}
+    \item \textbf{Legal research} requiring access to the full context of cases, including exhibits and supporting materials
+    \item \textbf{Natural language processing} tasks across multiple document formats in the legal domain
+    \item \textbf{Multi-modal analysis} of legal proceedings, including text, scanned documents, and audio
+    \item \textbf{Studies of evidence types} used in different categories of federal litigation
+    \item \textbf{Legal education} providing realistic examples of legal document preparation
+\end{enumerate}
+
+The dataset's inclusion of various file formats makes it particularly valuable for researchers interested in developing tools that can process the heterogeneous document types encountered in legal practice.
