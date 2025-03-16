@@ -282,7 +282,7 @@ def export_to_jsonl(
 
                 # Write to output file
                 with output_lock:
-                    with gzip.open(output_path, "a", encoding="utf-8") as f:
+                    with gzip.open(output_path, "at", encoding="utf-8") as f:
                         f.write(json.dumps(result) + "\n")
 
                 # Update stats
@@ -304,7 +304,7 @@ def export_to_jsonl(
             return False
 
         # Create an empty output file
-        with gzip.open(output_path, "w", encoding="utf-8") as f:
+        with gzip.open(output_path, "wt", encoding="utf-8") as f:
             pass
 
         # Process objects in parallel using a thread pool
@@ -353,6 +353,7 @@ def push_to_huggingface(
     include_metrics: bool = False,
     use_temp_file: bool = True,
     format_type: str = "tokens",
+    temp_file_path: Optional[str] = None,
 ) -> None:
     """
     Export documents from S3 pipeline directly to Hugging Face.
@@ -369,6 +370,7 @@ def push_to_huggingface(
         include_metrics: Whether to include detailed metrics in the output
         use_temp_file: Whether to use a temporary file (True) or stream directly (False)
         format_type: Output format type, either "tokens" for token IDs or "text" for decoded text
+        temp_file_path: Optional custom path for the temporary file. If None, uses system temp directory.
     """
     console = Console()
 
@@ -376,11 +378,21 @@ def push_to_huggingface(
         # Use a temporary file approach for better reliability
         import tempfile
 
-        with tempfile.NamedTemporaryFile(suffix=".jsonl.gz", delete=False) as temp_file:
-            temp_path = temp_file.name
+        if temp_file_path:
+            # Use the provided custom temp file path
+            temp_path = temp_file_path
             console.print(
-                f"Exporting to temporary file {temp_path} before uploading to Hugging Face..."
+                f"Exporting to custom temporary file {temp_path} before uploading to Hugging Face..."
             )
+        else:
+            # Use system temp directory
+            with tempfile.NamedTemporaryFile(
+                suffix=".jsonl.gz", delete=False
+            ) as temp_file:
+                temp_path = temp_file.name
+                console.print(
+                    f"Exporting to temporary file {temp_path} before uploading to Hugging Face..."
+                )
 
         try:
             # First export to the temporary file

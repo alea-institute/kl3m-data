@@ -481,6 +481,7 @@ def push_to_hf_command(
     include_metrics: bool = False,
     use_temp_file: bool = True,
     format_type: str = "tokens",
+    temp_file_path: Optional[str] = None,
 ) -> None:
     """
     Export dataset documents to Hugging Face.
@@ -496,6 +497,7 @@ def push_to_hf_command(
         include_metrics: Whether to include detailed metrics in the output
         use_temp_file: Whether to use a temporary file (more reliable)
         format_type: Output format type, either "tokens" for token IDs or "text" for decoded text
+        temp_file_path: Optional custom path for the temporary file. If None, uses system temp directory.
     """
     # Always use PARQUET stage
     source = S3Stage.PARQUET
@@ -513,6 +515,7 @@ def push_to_hf_command(
         include_metrics=include_metrics,
         use_temp_file=use_temp_file,
         format_type=format_type,
+        temp_file_path=temp_file_path,
     )
 
 
@@ -743,6 +746,10 @@ def main() -> None:
         default="tokens",
         help="Output format type: 'tokens' for token IDs or 'text' for decoded text",
     )
+    hf_parser.add_argument(
+        "--temp-file-path",
+        help="Custom path for the temporary file. If not provided, uses system temp directory",
+    )
 
     # Parse arguments
     args = parser.parse_args()
@@ -812,6 +819,7 @@ def main() -> None:
             args.include_metrics,
             not args.direct_streaming,
             args.format_type,
+            args.temp_file_path,
         )
 
 
