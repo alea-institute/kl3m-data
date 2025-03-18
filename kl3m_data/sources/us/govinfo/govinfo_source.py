@@ -1036,7 +1036,7 @@ class GovInfoSource(BaseSource):
         self, **kwargs: dict[str, Any]
     ) -> Generator[SourceProgressStatus, None, None]:
         """
-        Download all documents.
+        Download all documents using offsetMark pagination.
 
         Args:
             kwargs (dict[str, Any]): Additional keyword arguments
@@ -1044,5 +1044,72 @@ class GovInfoSource(BaseSource):
         Yields:
             SourceProgressStatus: The progress status.
         """
-        # track current date and progress
-        yield from self.download_date_range(self.min_date, self.max_date, **kwargs)
+        # set up source prog status
+        current_progress = SourceProgressStatus(
+            total=None, description="Downloading GovInfo resources..."
+        )
+
+        # use wildcard query to get all documents
+        query = "*:*"
+
+        # add collection filter if present
+        if isinstance(kwargs.get("collection", None), str):
+            query += f" AND collection:{kwargs['collection']}"
+
+        page_size = kwargs.get("page_size", 1000)
+        offset_mark = "*"
+
+        search_results = self.search(
+            query=query,
+            page_size=page_size,
+            offset_mark=offset_mark,
+        )
+
+        while True:
+            if not search_results.results or len(search_results.results) == 0:
+                break
+
+            current_progress.total = search_results.count
+            for result in search_results.results:
+                try:
+                    status = self.download_search_result(result)
+                    if status in (
+                        SourceDownloadStatus.FAILURE,
+                        SourceDownloadStatus.PARTIAL,
+                    ):
+                        current_progress.failure += 1
+                    elif status in (SourceDownloadStatus.SUCCESS,):
+                        current_progress.success += 1
+                    current_progress.extra = {
+                        "package_id": result.packageId,
+                        "granule_id": result.granuleId,
+                        "collection_code": result.collectionCode,
+                        "rate-limit-remaining": self.rate_limit_remaining,
+                        "offset_mark": offset_mark,
+                    }
+                except Exception as e:  # pylint: disable=broad-except
+                    LOGGER.warning("Error downloading %s: %s", result, e)
+                    current_progress.message = str(e)
+                    current_progress.failure += 1
+                    current_progress.status = False
+                finally:
+                    # update the prog bar
+                    current_progress.current += 1
+                    yield current_progress
+                    current_progress.message = None
+
+            # Get the next page with the new offset mark
+            offset_mark = search_results.offsetMark
+            if offset_mark == "*" or not offset_mark:
+                # If we're back to the beginning or have no offset, we're done
+                break
+
+            search_results = self.search(
+                query=query,
+                page_size=page_size,
+                offset_mark=offset_mark,
+            )
+
+        # yield the final status
+        current_progress.done = True
+        yield current_progress

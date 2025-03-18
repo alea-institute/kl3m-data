@@ -181,10 +181,12 @@ def source_download_date_range(
 def source_download_all(source: BaseSource, **kwargs) -> None:
     """
     Download all data from the given source with a progress bar.
+    For GovInfo source, this uses offsetMark pagination instead of date-based iteration.
 
     Args:
         source: The data source to download from.
         **kwargs: Additional keyword arguments for the download
+            page_size (int): Number of results per page (for sources that support pagination)
 
     Returns:
         None
@@ -275,7 +277,11 @@ def main() -> None:
     for arg in args.args:
         if "=" in arg:
             key, value = arg.split("=")
-            kwargs[key] = value
+            # Handle numeric parameters
+            if key == "page_size" and value.isdigit():
+                kwargs[key] = int(value)
+            else:
+                kwargs[key] = value
 
     # get the source
     source = get_source(args.source_id, **kwargs)
