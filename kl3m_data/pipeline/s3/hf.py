@@ -16,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Generator, List, Optional, Set, Union
 
 # packages
+import boto3
 import datasets
 from rich.console import Console
 from rich.progress import (
