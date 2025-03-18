@@ -547,6 +547,7 @@ def push_to_hf_command(
     dataset_id: str,
     output_name: str,
     key_prefix: Optional[str] = None,
+    key_prefix_contains: Optional[str] = None,
     max_workers: int = 10,
     max_documents: Optional[int] = None,
     score_threshold: Optional[float] = None,
@@ -563,6 +564,7 @@ def push_to_hf_command(
         dataset_id: Dataset ID to export
         output_name: Name of the Hugging Face dataset to create/update
         key_prefix: Optional key prefix to filter objects
+        key_prefix_contains: Optional substring to match in prefixes
         max_workers: Maximum number of worker threads for parallel processing
         max_documents: Maximum number of documents to export
         score_threshold: Optional quality score threshold
@@ -581,6 +583,7 @@ def push_to_hf_command(
         output_name=output_name,
         source_stage=source,
         key_prefix=key_prefix,
+        key_prefix_contains=key_prefix_contains,
         max_workers=max_workers,
         max_documents=max_documents,
         score_threshold=score_threshold,
@@ -807,6 +810,10 @@ def main() -> None:
         "--key-prefix", help="Key prefix to filter objects within the dataset"
     )
     hf_parser.add_argument(
+        "--key-prefix-contains", 
+        help="Substring to match in prefixes (searches all matching prefixes)"
+    )
+    hf_parser.add_argument(
         "--max-workers",
         type=int,
         default=10,
@@ -913,6 +920,7 @@ def main() -> None:
             args.dataset_id,
             args.output_name,
             args.key_prefix,
+            args.key_prefix_contains,
             args.max_workers,
             args.max_documents,
             args.score_threshold,

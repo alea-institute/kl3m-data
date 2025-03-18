@@ -577,11 +577,50 @@ def get_subfolder_status(
     return stats
 
 
+def find_prefixes_containing(
+    client: boto3.client,
+    bucket: str,
+    parent_prefix: str,
+    substring: str,
+) -> List[str]:
+    """
+    Find all prefixes under a parent prefix that contain a given substring.
+    
+    This is useful for matching variations of a prefix without knowing the exact form.
+    
+    Args:
+        client (boto3.client): S3 client
+        bucket (str): Bucket name
+        parent_prefix (str): Parent prefix to search within
+        substring (str): Substring to match in the prefixes
+        
+    Returns:
+        List[str]: List of matching prefixes
+    """
+    # Make sure parent_prefix ends with a slash
+    if not parent_prefix.endswith('/'):
+        parent_prefix += '/'
+        
+    # List all common prefixes at the parent level
+    all_prefixes = list_common_prefixes(client, bucket, parent_prefix)
+    
+    # Filter prefixes containing the substring
+    matching_prefixes = []
+    for prefix in all_prefixes:
+        # Get the actual subfolder name by removing the parent prefix
+        subfolder = prefix[len(parent_prefix):].rstrip('/')
+        if substring.lower() in subfolder.lower():  # Case-insensitive match
+            matching_prefixes.append(prefix)
+            
+    return matching_prefixes
+
+
 def push_to_huggingface(
     dataset_id: str,
     output_name: str,
     source_stage: S3Stage = S3Stage.PARQUET,
     key_prefix: Optional[str] = None,
+    key_prefix_contains: Optional[str] = None,
     max_workers: int = 10,
     max_documents: Optional[int] = None,
     score_threshold: Optional[float] = None,
@@ -599,6 +638,8 @@ def push_to_huggingface(
         output_name: Name of the Hugging Face dataset to create/update
         source_stage: Which pipeline stage to export from (REPRESENTATIONS or PARQUET)
         key_prefix: Optional key prefix to filter objects
+        key_prefix_contains: Optional substring to match in prefixes 
+                             (will search for all matching prefixes)
         max_workers: Maximum number of worker threads for parallel processing
         max_documents: Maximum number of documents to export
         score_threshold: Optional quality score threshold
@@ -609,6 +650,218 @@ def push_to_huggingface(
         temp_file_path: Optional custom path for the temporary file. If None, uses system temp directory.
     """
     console = Console()
+    bucket = "data.kl3m.ai"
+    
+    # Handle key_prefix_contains parameter
+    if key_prefix_contains and not key_prefix:
+        # Initialize S3 client
+        s3_client = get_s3_client()
+        
+        # Construct the parent prefix for the dataset and stage
+        parent_prefix = f"{source_stage.value}/{dataset_id}/"
+        
+        # Find all prefixes containing the substring
+        matching_prefixes = find_prefixes_containing(
+            s3_client, bucket, parent_prefix, key_prefix_contains
+        )
+        
+        if matching_prefixes:
+            # If we found matching prefixes, process each one and combine results
+            console.print(f"Found {len(matching_prefixes)} prefixes containing '{key_prefix_contains}':")
+            
+            # Create a temporary dataset for each prefix and then combine
+            all_datasets = []
+            temp_path = None
+            
+            for prefix in matching_prefixes:
+                subfolder = prefix[len(parent_prefix):].rstrip('/')
+                console.print(f"  - {subfolder}")
+                
+                # Extract the key_prefix to use for this specific match
+                current_key_prefix = subfolder
+                
+                # Process this prefix using a unique temporary file
+                console.print(f"Processing prefix: {current_key_prefix}")
+                
+                if use_temp_file:
+                    # Create a temporary file specific to this prefix
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(suffix=".jsonl.gz", delete=False) as temp_file:
+                        current_temp_path = temp_file.name
+                        
+                    # Export to the temporary file
+                    doc_count = export_to_jsonl(
+                        dataset_id=dataset_id,
+                        output_path=current_temp_path,
+                        source_stage=source_stage,
+                        key_prefix=current_key_prefix,
+                        max_workers=max_workers,
+                        max_documents=None,  # We'll handle max documents later when combining
+                        score_threshold=score_threshold,
+                        deduplicate=False,  # We'll do deduplication at the end
+                        include_metrics=include_metrics,
+                        format_type=format_type,
+                    )
+                    
+                    if doc_count > 0:
+                        console.print(f"  Exported {doc_count} documents from {current_key_prefix}")
+                        
+                        # Load as dataset
+                        try:
+                            # Define features based on format_type
+                            if format_type == "tokens":
+                                from datasets import Features, Value, Sequence
+                                
+                                features = Features(
+                                    {
+                                        "identifier": Value("string"),
+                                        "dataset": Value("string"),
+                                        "mime_type": Value("string"),
+                                        "tokens": Sequence(Value("int32")),
+                                        "score": Value("float32"),
+                                    }
+                                )
+                                if include_metrics:
+                                    features["metrics"] = Value("string")  # JSON serialized
+                                
+                                # Load dataset with specified features
+                                current_dataset = datasets.load_dataset(
+                                    "json", data_files=current_temp_path, features=features
+                                )
+                            else:
+                                # For text format, default features are fine
+                                current_dataset = datasets.load_dataset("json", data_files=current_temp_path)
+                                
+                            # Add to our list of datasets to merge
+                            all_datasets.append(current_dataset['train'])
+                            
+                        except Exception as e:
+                            console.print(f"Error loading dataset: {e}")
+                        
+                        # Clean up temporary file
+                        try:
+                            os.unlink(current_temp_path)
+                        except Exception as e:
+                            console.print(f"Warning: Failed to remove temporary file {current_temp_path}: {e}")
+                else:
+                    # Direct streaming is not supported for the key_prefix_contains option
+                    # as it requires combining multiple datasets which is difficult to do
+                    # in a streaming fashion
+                    console.print("Direct streaming is not supported with --key-prefix-contains.")
+                    console.print("Using temporary files instead for reliable processing.")
+                    
+                    # Create a temporary file specific to this prefix
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(suffix=".jsonl.gz", delete=False) as temp_file:
+                        current_temp_path = temp_file.name
+                        
+                    # Export to the temporary file (same as above)
+                    doc_count = export_to_jsonl(
+                        dataset_id=dataset_id,
+                        output_path=current_temp_path,
+                        source_stage=source_stage,
+                        key_prefix=current_key_prefix,
+                        max_workers=max_workers,
+                        max_documents=None,
+                        score_threshold=score_threshold,
+                        deduplicate=False,
+                        include_metrics=include_metrics,
+                        format_type=format_type,
+                    )
+                    
+                    if doc_count > 0:
+                        console.print(f"  Exported {doc_count} documents from {current_key_prefix}")
+                        
+                        # Load as dataset (same as above)
+                        try:
+                            # Define features based on format_type
+                            if format_type == "tokens":
+                                from datasets import Features, Value, Sequence
+                                
+                                features = Features(
+                                    {
+                                        "identifier": Value("string"),
+                                        "dataset": Value("string"),
+                                        "mime_type": Value("string"),
+                                        "tokens": Sequence(Value("int32")),
+                                        "score": Value("float32"),
+                                    }
+                                )
+                                if include_metrics:
+                                    features["metrics"] = Value("string")  # JSON serialized
+                                
+                                # Load dataset with specified features
+                                current_dataset = datasets.load_dataset(
+                                    "json", data_files=current_temp_path, features=features
+                                )
+                            else:
+                                # For text format, default features are fine
+                                current_dataset = datasets.load_dataset("json", data_files=current_temp_path)
+                                
+                            # Add to our list of datasets to merge
+                            all_datasets.append(current_dataset['train'])
+                            
+                        except Exception as e:
+                            console.print(f"Error loading dataset: {e}")
+                        
+                        # Clean up temporary file
+                        try:
+                            os.unlink(current_temp_path)
+                        except Exception as e:
+                            console.print(f"Warning: Failed to remove temporary file {current_temp_path}: {e}")
+            
+            # If we have datasets to merge
+            if all_datasets:
+                # Merge all datasets
+                console.print(f"Merging {len(all_datasets)} datasets...")
+                merged_dataset = datasets.concatenate_datasets(all_datasets)
+                
+                # Apply additional filters that couldn't be applied per-dataset
+                if max_documents and len(merged_dataset) > max_documents:
+                    console.print(f"Trimming to {max_documents} documents")
+                    merged_dataset = merged_dataset.select(range(max_documents))
+                
+                if deduplicate:
+                    console.print("Removing duplicates...")
+                    # Create a deduplication function based on format_type
+                    if format_type == "tokens":
+                        def get_hash(example):
+                            # Use first 1024 tokens for deduplication
+                            tokens = example.get("tokens", [])[:1024]
+                            return hash(tuple(tokens))
+                    else:
+                        def get_hash(example):
+                            # Use first 1000 characters for deduplication
+                            text = example.get("text", "")[:1000]
+                            return hash(text)
+                    
+                    # Track hashes we've seen
+                    seen_hashes = set()
+                    keep_indices = []
+                    
+                    # Identify indices to keep (first occurrence of each hash)
+                    for i, example in enumerate(merged_dataset):
+                        h = get_hash(example)
+                        if h not in seen_hashes:
+                            seen_hashes.add(h)
+                            keep_indices.append(i)
+                    
+                    # Select just the unique items
+                    merged_dataset = merged_dataset.select(keep_indices)
+                    console.print(f"After deduplication: {len(merged_dataset)} documents")
+                
+                # Push to Hugging Face
+                console.print(f"Pushing {len(merged_dataset)} documents to Hugging Face dataset '{output_name}'...")
+                merged_dataset.push_to_hub(output_name)
+                console.print(f"Successfully pushed to Hugging Face as {output_name}")
+                return
+            else:
+                console.print("No documents were found in any of the matching prefixes")
+                return
+                
+        else:
+            console.print(f"No prefixes found containing '{key_prefix_contains}'")
+            return
 
     if use_temp_file:
         # Use a temporary file approach for better reliability
