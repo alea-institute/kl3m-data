@@ -48,6 +48,9 @@ dependencies = [
     "pytesseract>=0.3.13",
     "ipython>=8.33.0",
     "alea-markdown[markdownify]>=0.1.0",
+    "matplotlib>=3.10.1",
+    "numpy>=2.2.3",
+    "psutil>=7.0.0",
 ]
 
 [project.urls]
