@@ -4,8 +4,10 @@ CLI for the KL3M Data parsing functionality.
 
 # imports
 import argparse
+import base64
 import gzip
 import json
+import zlib
 from typing import Any, Optional
 
 # packages
@@ -22,21 +24,26 @@ from rich.progress import (
 from kl3m_data.logger import LOGGER
 from kl3m_data.parsers.parser import get_output_key, parse_object
 from kl3m_data.utils.s3_utils import (
+    S3Stage,
     check_object_exists,
     get_s3_client,
     iter_prefix,
     iter_prefix_shard,
     put_object_bytes,
     list_common_prefixes,
+    get_object_bytes,
+    get_stage_prefix,
+    get_index_key,
 )
 
 
-def parse_single(object_key: str, **kwargs: Any) -> None:
+def parse_single(object_key: str, clobber: bool, **kwargs: Any) -> None:
     """
     Parse a single object by key.
 
     Args:
         object_key: The S3 object key to parse
+        clobber: Whether to overwrite existing output keys
         **kwargs: Additional keyword arguments passed to parse_object
     """
     # get the s3 client
@@ -44,9 +51,10 @@ def parse_single(object_key: str, **kwargs: Any) -> None:
 
     # get output key and check if it exists
     output_key = get_output_key(object_key)
-    if check_object_exists(s3_client, "data.kl3m.ai", output_key):
-        LOGGER.info("Output key already exists: %s", output_key)
-        return
+    if not clobber:
+        if check_object_exists(s3_client, "data.kl3m.ai", output_key):
+            LOGGER.info("Output key already exists: %s", output_key)
+            return
 
     try:
         parsed_docs = parse_object(s3_client, "data.kl3m.ai", object_key, **kwargs)
@@ -75,6 +83,7 @@ def parse_serial(
     shard_prefix: Optional[str] = None,
     clobber: bool = False,
     prefix: Optional[str] = None,
+    suffix: Optional[str] = None,
     **kwargs: Any,
 ) -> None:
     """
@@ -85,16 +94,17 @@ def parse_serial(
         shard_prefix: Optional shard prefix to filter objects
         clobber: Whether to overwrite existing output keys
         prefix: Optional prefix to filter objects
+        suffix: Optional suffix to filter objects
         **kwargs: Additional keyword arguments passed to parse_object
     """
     # initialize S3 client
     s3_client = get_s3_client()
 
-    # handle optional dataset id
+    # handle optional dataset id using utility functions
     if dataset_id:
-        dataset_paths = [f"documents/{dataset_id}/"]
+        dataset_paths = [get_stage_prefix(S3Stage.DOCUMENTS, dataset_id)]
     else:
-        dataset_paths = ["documents/"]
+        dataset_paths = [get_stage_prefix(S3Stage.DOCUMENTS)]
 
     # setup progress tracking
     progress_columns = [
@@ -135,6 +145,10 @@ def parse_serial(
                 objects = iter_prefix(s3_client, "data.kl3m.ai", full_dataset_path)
 
             for object_key in objects:
+                # check suffix here
+                if suffix and not object_key.lower().endswith(suffix.lower()):
+                    continue
+
                 progress.update(task, advance=1)
                 progress.update(
                     task,
@@ -144,14 +158,11 @@ def parse_serial(
 
                 # get output key and check if it exists
                 output_key = get_output_key(object_key)
-                if check_object_exists(s3_client, "data.kl3m.ai", output_key):
-                    if not clobber:
+                if not clobber:
+                    if check_object_exists(s3_client, "data.kl3m.ai", output_key):
                         LOGGER.info("Output key already exists: %s", output_key)
                         good += 1
                         continue
-                    else:
-                        LOGGER.info("Clobbering existing output key: %s", output_key)
-                        new += 1
 
                 try:
                     parsed_docs = parse_object(
@@ -190,9 +201,9 @@ def build_dataset_index(dataset_id: str):
     Returns:
         None
     """
-    # set up the paths
-    representation_path = f"representations/{dataset_id}/"
-    index_path = f"index/{dataset_id}.json.gz"
+    # set up the paths using utility functions
+    representation_path = get_stage_prefix(S3Stage.REPRESENTATIONS, dataset_id)
+    index_path = get_index_key(dataset_id)
 
     # get the paths
     c = get_s3_client()
@@ -210,6 +221,7 @@ def build_dataset_index(dataset_id: str):
     # track all objects
     all_objects = []
     total = 0
+
     # for object_key in prog_bar:
     with Progress(*progress_columns) as progress:
         task = progress.add_task(
@@ -257,7 +269,9 @@ def build_all_dataset_index():
     """
     # get the paths
     c = get_s3_client()
-    dataset_paths = list_common_prefixes(c, "data.kl3m.ai", "representations/")
+    dataset_paths = list_common_prefixes(
+        c, "data.kl3m.ai", get_stage_prefix(S3Stage.REPRESENTATIONS)
+    )
 
     # run build index for each
     for dataset_path in dataset_paths:
@@ -271,15 +285,25 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="kl3m data parser CLI")
     parser.add_argument(
         "command",
-        choices=["parse_single", "parse_serial", "build_index", "build_all_indexes"],
+        choices=[
+            "parse_single",
+            "parse_serial",
+            "build_index",
+            "build_all_indexes",
+            "show",
+        ],
         help="Command to execute",
     )
-    parser.add_argument("--key", help="Object key to parse (for parse_single)")
+    parser.add_argument("--key", help="Object key to parse (for parse_single, show)")
     parser.add_argument("--dataset-id", help="Dataset ID to process")
     parser.add_argument("--shard-prefix", help="Shard prefix to process")
     parser.add_argument(
         "--key-prefix", help="Prefix to filter objects (for parse_serial)"
     )
+    parser.add_argument(
+        "--key-suffix", help="Suffix to filter objects (for parse_serial)"
+    )
+
     parser.add_argument(
         "--max-size", type=int, default=8, help="Maximum file size in MB to process"
     )
@@ -300,10 +324,15 @@ def main() -> None:
     if args.command == "parse_single":
         if not args.key:
             raise ValueError("--key is required for parse_single command")
-        parse_single(args.key, **kwargs)
+        parse_single(args.key, clobber=args.clobber, **kwargs)
     elif args.command == "parse_serial":
         parse_serial(
-            args.dataset_id, args.shard_prefix, args.clobber, args.key_prefix, **kwargs
+            args.dataset_id,
+            args.shard_prefix,
+            args.clobber,
+            args.key_prefix,
+            args.key_suffix,
+            **kwargs,
         )
     elif args.command == "build_index":
         if not args.dataset_id:
@@ -311,6 +340,41 @@ def main() -> None:
         build_dataset_index(args.dataset_id)
     elif args.command == "build_all_indexes":
         build_all_dataset_index()
+    elif args.command == "show":
+        if not args.key:
+            raise ValueError("--key is required for show command")
+
+        # get the s3 client
+        s3_client = get_s3_client()
+
+        # get the object
+        object_bytes = get_object_bytes(s3_client, "data.kl3m.ai", args.key)
+
+        # print the object metadata excluding tokens and representations
+        object_data = json.loads(object_bytes.decode("utf-8"))
+
+        for document_number, document in enumerate(object_data.get("documents", [])):
+            print("=" * 40)
+            print(f"Document {document_number + 1}:")
+            print("=" * 40)
+
+            for key, value in document.items():
+                if key not in ["tokens", "representations"]:
+                    print(f" - {key}: {value}")
+
+            # now print all representations with nice separation
+            print("\nRepresentations:")
+            for mime_type, representation in document.get(
+                "representations", {}
+            ).items():
+                print("~" * 40)
+                print(f"{mime_type}:")
+                print("~" * 40)
+                print(
+                    zlib.decompress(
+                        base64.b64decode(representation["content"])
+                    ).decode()
+                )  # type: ignore
 
 
 if __name__ == "__main__":

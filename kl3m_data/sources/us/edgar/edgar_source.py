@@ -6,14 +6,17 @@ EDGAR source
 import datetime
 import hashlib
 import io
+import json
 import mimetypes
 import re
 import tarfile
+import zipfile
 from pathlib import Path
-from typing import Any, Generator, Literal
+from typing import Any, Generator, Literal, Optional, Iterable
 
 # packages
-
+import dateutil.parser
+import tqdm
 
 # project
 from kl3m_data.logger import LOGGER
@@ -41,6 +44,10 @@ RE_SUBMISSION_TAG = re.compile("<SUBMISSION>.*?</SUBMISSION>", re.DOTALL)
 RE_DOC_TAG = re.compile("<DOCUMENT>.*?</DOCUMENT>", re.DOTALL)
 RE_CONTENT_TAG = re.compile("<TEXT>(.*?)</TEXT>", re.DOTALL)
 RE_META_TAG = re.compile("<(DESCRIPTION|FILENAME|SEQUENCE|TYPE)>(.*?)\n", re.DOTALL)
+
+# cache path for submissions.zip
+EDGAR_SUBMISSIONS_URL_PATH = "daily-index/bulkdata/submissions.zip"
+EDGAR_SUBMISSIONS_CACHE_PATH = Path.home() / ".cache" / "alea" / "submissions.zip"
 
 
 class EDGARSource(BaseSource):
@@ -611,8 +618,308 @@ class EDGARSource(BaseSource):
             yield from self.download_date(current_date)
             current_date += datetime.timedelta(days=1)
 
+    def get_submissions_zip_path(self) -> Path:
+        """
+        Get the path to the submissions.zip zipfile, downloading it if it doesn't exist.
 
-if __name__ == "__main__":
-    source = EDGARSource()
-    for y in source.download_date(datetime.date(1997, 6, 3)):
-        print(y)
+        Returns:
+            Path: The path to the submissions.zip file.
+        """
+        # check if the path exists
+        if not EDGAR_SUBMISSIONS_CACHE_PATH.exists():
+            # get the url
+            url = self.get_url(EDGAR_SUBMISSIONS_URL_PATH)
+
+            # create path
+            EDGAR_SUBMISSIONS_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+            # download the file to the cache path
+            try:
+                with open(EDGAR_SUBMISSIONS_CACHE_PATH, "wb") as output_file:
+                    prog_bar = tqdm.tqdm(total=0, unit="B", unit_scale=True, desc=url)
+                    with self.client.stream("GET", url) as response:
+                        for chunk in response.iter_bytes():
+                            output_file.write(chunk)
+                            prog_bar.update(len(chunk))
+                            prog_bar.total += len(chunk)
+                    prog_bar.close()
+            except Exception as e:  # pylint: disable=broad-except
+                # log and unlink broken file
+                LOGGER.error("Error downloading submissions.zip: %s", str(e))
+                EDGAR_SUBMISSIONS_CACHE_PATH.unlink(missing_ok=True)
+
+        return EDGAR_SUBMISSIONS_CACHE_PATH
+
+    @staticmethod
+    def _submission_col_to_row(col_dict: dict) -> list[dict]:
+        """
+        Convert from columnar to row-based dictionary format.
+
+        Args:
+            col_dict (dict): The column-based dictionary.
+
+        Returns:
+            list[dict]: The list of dictionary records.
+        """
+        # get the keys
+        keys = list(col_dict.keys())
+        num_keys = len(keys)
+        num_rows = len(col_dict[keys[0]])
+
+        # validate
+        assert all(len(col_dict[key]) == num_rows for key in keys)
+
+        return [
+            {keys[i]: col_dict[keys[i]][j] for i in range(num_keys)}
+            for j in range(num_rows)
+        ]
+
+    @staticmethod
+    def _format_cik(input_cik: str) -> str:
+        """
+        CIK must have fixed length with left zero padding.
+
+        Args:
+            input_cik (str): The CIK to format.
+
+        Returns:
+            str: The formatted CIK.
+        """
+        return input_cik.strip("/").zfill(10)
+
+    def get_submissions(
+        self,
+        cik: Optional[str | set[str]] = None,
+        form_type: Optional[str | set[str]] = None,
+        start_date: Optional[datetime.date] = None,
+        end_date: Optional[datetime.date] = None,
+        include_xbrl: bool = False,
+        include_inline_xbrl: bool = False,
+    ) -> Generator[dict[str, Any], None, None]:
+        """
+        Iterate through the JSON records inside of submissions.zip to identify
+        all submission records/accession numbers that match the given filters,
+        then return materialized dict records for them in a generator.
+
+        Args:
+            cik (Optional[str | set[str]]): The CIK to filter by.
+            form_type (Optional[str | set[str]]): The form type to filter by.
+            start_date (Optional[datetime.date]): The start date to filter by.
+            end_date (Optional[datetime.date]): The end date to filter by.
+            include_xbrl (bool): Whether to include XBRL filings.
+            include_inline_xbrl (bool): Whether to include inline XBRL filings.
+
+        Yields:
+            dict[str, Any]: The submission record.
+        """
+        # get the path
+        submissions_zip_path = self.get_submissions_zip_path()
+
+        # parse all filters into either a flat set or a None
+        if isinstance(cik, str):
+            cik = {cik}
+        elif isinstance(cik, (Iterable,)):
+            cik = set(cik)
+        else:
+            cik = None
+
+        if isinstance(form_type, str):
+            form_type = {form_type}
+        elif isinstance(form_type, (Iterable,)):
+            form_type = set(form_type)
+        else:
+            form_type = None
+
+        # normalize
+        if form_type:
+            form_type = {x.upper().strip() for x in form_type}
+
+        if isinstance(start_date, datetime.date):
+            start_date = {start_date}
+        elif isinstance(start_date, list):
+            start_date = set(start_date)
+        else:
+            start_date = None
+
+        if isinstance(end_date, datetime.date):
+            end_date = {end_date}
+        elif isinstance(end_date, list):
+            end_date = set(end_date)
+        else:
+            end_date = None
+
+        # open in zipfile context handler
+        with zipfile.ZipFile(submissions_zip_path, "r") as submissions_zip:
+            # iterate over members
+            for member in submissions_zip.namelist():
+                try:
+                    # get the file name
+                    file_name = member
+
+                    # get the file extension
+                    file_extension = Path(file_name).suffix
+                    if file_extension not in (".json",):
+                        continue
+
+                    # only parse the -submissions-### files within files[] section
+                    if "-submissions-" in file_name:
+                        continue
+
+                    # read the member buffer
+                    with submissions_zip.open(member) as member_object:
+                        # read the buffer and parse it
+                        member_buffer = member_object.read()
+                        record = json.loads(member_buffer)
+                        if record is None:
+                            LOGGER.warning(f"Skipping empty record in {member}")
+                            continue
+
+                        # check if record.cik is in set
+                        if cik and record.get("cik") not in cik:
+                            continue
+
+                        # we build the list of all filings here first;
+                        # if record.files is an empty list, all filings are contained within record.filings.recent
+                        # otherwise, we open each record.files[] and get the filings from there
+                        filings = []
+
+                        submission_file_list = record.get("files", [])
+                        if not submission_file_list or len(submission_file_list) == 0:
+                            filings.extend(
+                                self._submission_col_to_row(
+                                    record.get("filings", {}).get("recent", {})
+                                )
+                            )
+                        else:
+                            # open each file in record.files[] and get the filings from there
+                            for child_file in submission_file_list:
+                                with submissions_zip.open(child_file) as child_object:
+                                    # read the buffer and parse it
+                                    child_buffer = child_object.read()
+                                    child_record = json.loads(child_buffer)
+                                    if child_record is None:
+                                        LOGGER.warning(
+                                            f"Skipping empty record in {child_file}"
+                                        )
+                                        continue
+
+                                    filings.extend(
+                                        self._submission_col_to_row(
+                                            child_record.get("filings", {}).get(
+                                                "recent", {}
+                                            )
+                                        )
+                                    )
+
+                        # now yield from here after filtering
+                        for filing in filings:
+                            # parse filing date
+                            if start_date or end_date:
+                                try:
+                                    filing_date = dateutil.parser.parser(
+                                        filing.get("filingDate", "")
+                                    )
+                                    if start_date and filing_date < min(start_date):
+                                        continue
+                                    if end_date and filing_date > max(end_date):
+                                        continue
+                                except ValueError:
+                                    pass
+
+                            # parse form type
+                            if form_type:
+                                # normalize to compare
+                                filing_form_type = (
+                                    filing.get("form", "").upper().strip()
+                                )
+                                if filing_form_type not in form_type:
+                                    continue
+
+                            # parse xbrl
+                            if not include_xbrl:
+                                try:
+                                    filing_xbrl = bool(filing.get("isXBRL", 0))
+                                    if filing_xbrl:
+                                        continue
+                                except ValueError:
+                                    pass
+
+                            # parse inline xbrl
+                            if not include_inline_xbrl:
+                                try:
+                                    filing_inline_xbrl = bool(
+                                        filing.get("isInlineXBRL", 0)
+                                    )
+                                    if filing_inline_xbrl:
+                                        continue
+                                except ValueError:
+                                    pass
+
+                            # merge parent fields down
+                            accession_number = filing.get("accessionNumber", "")
+
+                            try:
+                                former_names = ";".join(record.get("formerNames", []))
+                            except Exception:
+                                former_names = ""
+
+                            try:
+                                exchanges = ";".join(record.get("exchanges", []))
+                            except Exception:
+                                exchanges = ""
+
+                            try:
+                                tickers = ";".join(record.get("tickers", []))
+                            except Exception:
+                                tickers = ""
+
+                            # cik/accession prefix
+                            cik_accession_path = accession_number.split("-")[0]
+
+                            yield {
+                                "kl3m_id": f"s3://data.kl3m.ai/documents/edgar/{cik_accession_path}/{accession_number}/",
+                                "cik": record.get("cik"),
+                                "name": record.get("name"),
+                                "filingDate": filing.get("filingDate"),
+                                "form": filing.get("form"),
+                                "accessionNumber": filing.get("accessionNumber"),
+                                "core_type": filing.get("core_type"),
+                                "primaryDocDescription": filing.get(
+                                    "primaryDocumentDescription"
+                                ),
+                                "items": filing.get("items"),
+                                "entityType": record.get("entityType"),
+                                "ownerOrg": record.get("ownerOrg"),
+                                "ein": record.get("ein"),
+                                "description": record.get("description"),
+                                "website": record.get("website"),
+                                "investorWebsite": record.get("investorWebsite"),
+                                "phone": record.get("phone"),
+                                "tickers": tickers,
+                                "exchanges": exchanges,
+                                "sic": record.get("sic"),
+                                "sicDescription": record.get("sicDescription"),
+                                "category": record.get("category"),
+                                "fiscalYearEnd": record.get("fiscalYearEnd"),
+                                "stateOfIncorporation": record.get(
+                                    "stateOfIncorporation"
+                                ),
+                                "formerNames": former_names,
+                                **{
+                                    # push the rest of the filing fields that we didn't reorder
+                                    k: v
+                                    for k, v in filing.items()
+                                    if k
+                                    not in (
+                                        "filingDate",
+                                        "form",
+                                        "accessionNumber",
+                                        "core_type",
+                                        "primaryDocDescription",
+                                        "items",
+                                    )
+                                },
+                            }
+                except Exception as e:
+                    LOGGER.error(f"Error parsing {file_name} in {member}: {str(e)}")
+                    continue

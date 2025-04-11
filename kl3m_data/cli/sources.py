@@ -21,6 +21,7 @@ from kl3m_data.sources.eu.eu_oj.eu_oj import EUOJSource
 from kl3m_data.sources.uk.uk_legislation.uk_legislation_source import (
     UKLegislationSource,
 )
+from kl3m_data.sources.us.cap.cap_source import CAPDocSource
 from kl3m_data.sources.us.dockets.dockets_source import DocketsSource
 from kl3m_data.sources.us.dotgov.dotgov_source import DotGovDocSource
 from kl3m_data.sources.us.ecfr.ecfr_source import ECFRSource
@@ -46,6 +47,8 @@ def get_source(source_id: str, **kwargs) -> BaseSource:
     Returns:
         BaseSource: The source object.
     """
+    if source_id in ("cap",):
+        return CAPDocSource(**kwargs)
     if source_id in ("fdlp", "us/fdlp"):
         return FDLPSource(**kwargs)
     if source_id in ("govinfo", "us/govinfo"):
@@ -178,10 +181,12 @@ def source_download_date_range(
 def source_download_all(source: BaseSource, **kwargs) -> None:
     """
     Download all data from the given source with a progress bar.
+    For GovInfo source, this uses offsetMark pagination instead of date-based iteration.
 
     Args:
         source: The data source to download from.
         **kwargs: Additional keyword arguments for the download
+            page_size (int): Number of results per page (for sources that support pagination)
 
     Returns:
         None
@@ -272,7 +277,11 @@ def main() -> None:
     for arg in args.args:
         if "=" in arg:
             key, value = arg.split("=")
-            kwargs[key] = value
+            # Handle numeric parameters
+            if key == "page_size" and value.isdigit():
+                kwargs[key] = int(value)
+            else:
+                kwargs[key] = value
 
     # get the source
     source = get_source(args.source_id, **kwargs)

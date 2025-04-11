@@ -3,7 +3,7 @@ name = "kl3m-data"
 version = "0.1.1"
 description = "KL3M training data collection and preprocesing from the ALEA Institute"
 authors = [{ name = "ALEA Institute", email = "hello@aleainstitute.ai" }]
-requires-python = ">=3.10,<4.0.0"
+requires-python = ">=3.12,<4.0.0"
 readme = "README.md"
 license = "MIT"
 keywords = [
@@ -43,11 +43,22 @@ dependencies = [
     "pyarrow>=19.0.0",
     "tokenizers>=0.21.0",
     "datasets>=3.2.0",
+    "polars>=1.21.0",
+    "valkey>=6.0.2",
+    "pytesseract>=0.3.13",
+    "ipython>=8.33.0",
+    "alea-markdown[markdownify]>=0.1.0",
+    "matplotlib>=3.10.1",
+    "numpy>=2.2.3",
+    "psutil>=7.0.0",
 ]
 
 [project.urls]
 Homepage = "https://aleainstitute.ai/"
 Repository = "https://github.com/alea-institute/kl3m-data"
+
+[project.scripts]
+kl3m-hf = "kl3m_data.cli.hf:main"
 
 [dependency-groups]
 dev = [
@@ -57,6 +68,20 @@ dev = [
     "pytest-cov>=5.0.0,<6",
     "pylint>=3.2.7,<4",
     "mypy>=1.11.2,<2",
+]
+ocr = [
+    "pytesseract>=0.3.13",
+]
+jupyter = [
+    "altair>=5.5.0",
+    "jupyterlab>=4.3.5",
+    "matplotlib>=3.10.0",
+    "scikit-learn>=1.6.1",
+]
+api = [
+    "fastapi>=0.115.8",
+    "uvicorn>=0.34.0",
+    "valkey[libvalkey]>=6.0.2",
 ]
 
 [tool.hatch.build.targets.sdist]

@@ -1,5 +1,6 @@
 # import
 import base64
+import html
 import zlib
 
 # packages
@@ -54,6 +55,17 @@ def serialize_document(document: dict, schema=get_document_schema()) -> bytes | 
             content = zlib.decompress(base64.b64decode(record.get("content"))).decode(  # type: ignore
                 "utf-8"
             )
+
+            # if the content type is text/markdown or text/plain, unescape html
+            # to get the actual content
+            if content_type in ["text/markdown", "text/plain"]:
+                if "&nbsp;" in content or "&#160;" in content:
+                    try:
+                        content = html.unescape(content)
+                    except Exception as e:
+                        print(f"Error while unescaping HTML: {e}")
+                        continue
+
             # encode content
             token_map.append((content_type, DEFAULT_TOKENIZER.encode(content).ids))
         except Exception as e:

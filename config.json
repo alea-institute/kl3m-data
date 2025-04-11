@@ -9,7 +9,7 @@
     "default_httpx_read_timeout": 10,
     "default_httpx_write_timeout": 10,
     "default_s3_bucket": "data.kl3m.ai",
-    "default_s3_region": "us-east-2",
+    "default_s3_region": "us-east-1",
     "default_s3_connect_timeout": 10,
     "default_s3_read_timeout": 10,
     "default_s3_retry_count": 3,

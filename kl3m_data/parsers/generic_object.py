@@ -2,13 +2,14 @@
 Generic object parser.
 """
 
+import mimetypes
+
 # imports
 from typing import List, Optional
 
 # project
 from kl3m_data.logger import LOGGER
 from kl3m_data.parsers import (
-    eu_oj_xml,
     generic_html,
     generic_json,
     generic_pdf,
@@ -20,6 +21,7 @@ from kl3m_data.parsers.parser_types import (
     ParsedDocument,
     ParsedDocumentRepresentation,
 )
+from kl3m_data.utils.uu_utils import uudecode
 
 # packages
 
@@ -96,6 +98,38 @@ def parse_content(
     Returns:
         List[ParsedDocument]: Parsed documents.
     """
+    # strip initial <PDF> tag if present
+    if object_content.startswith(b"<PDF>"):
+        object_content = object_content[5:].lstrip()
+        # remove from end
+        if object_content.endswith(b"</PDF>"):
+            object_content = object_content[:-6].rstrip()
+
+    # check if the content is uuencoded here
+    if object_format == "application/uuencode":
+        # decode the content
+        try:
+            object_name, object_content = uudecode(object_content)
+            mime_type, _ = mimetypes.guess_type(object_name)
+            if mime_type:
+                object_format = mime_type
+        except Exception as e:
+            LOGGER.error("Failed to decode uuencoded content: %s", e)
+            return []
+
+    # check for begin ### next
+    if object_content.startswith(b"begin"):
+        # decode the content
+        try:
+            if object_content[6:9].decode().isnumeric():
+                object_name, object_content = uudecode(object_content)
+                mime_type, _ = mimetypes.guess_type(object_name)
+                if mime_type:
+                    object_format = mime_type
+        except Exception as e:
+            LOGGER.error("Failed to decode uuencoded content: %s", e)
+            return []
+
     # parse the document
     documents = []
     if object_format in ("application/zip",):
@@ -129,22 +163,13 @@ def parse_content(
         "text/xml",
         "application/xml",
     ):
-        if object_source == "https://publications.europa.eu/":
-            documents.extend(
-                eu_oj_xml.parse(
-                    content=object_content,
-                    source=object_source,
-                    identifier=object_url,
-                )
+        documents.extend(
+            generic_xml.parse(
+                content=object_content,
+                source=object_source,
+                identifier=object_url,
             )
-        else:
-            documents.extend(
-                generic_xml.parse(
-                    content=object_content,
-                    source=object_source,
-                    identifier=object_url,
-                )
-            )
+        )
     elif object_format in ("application/json",):
         documents.extend(
             generic_json.parse(
