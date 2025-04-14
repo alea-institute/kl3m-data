@@ -7,14 +7,34 @@
 ## Description
 
 This [ALEA](https://aleainstitute.ai/) project contains the complete source code to collect and preprocess
-all training data related to the [KL3M embedding and generative models](https://kl3m.ai/).
+all training data related to the [KL3M embedding and generative models](https://kl3m.ai/). The KL3M Data Project 
+provides a comprehensive, copyright-clean dataset for training large language models, addressing legal risks in 
+AI data collection.
+
+### Key Features
+- Over 132 million documents spanning trillions of tokens
+- Verifiably public domain or appropriately licensed sources
+- Complete source code for document acquisition and processing
+- Multi-stage data access with original formats, extracted content, and pre-tokenized representations
 
 
 ## Paper
-Pending arXiv submission
+[The KL3M Data Project: Copyright-Clean Training Resources for Large Language Models](https://arxiv.org/html/2504.07854v1)
+
+## Dataset
+[Hugging Face Dataset: kl3m-data-snapshot-20250324](https://huggingface.co/datasets/alea-institute/kl3m-data-snapshot-20250324)
 
 ## Citation
-Pending arXiv submission
+```bibtex
+@misc{bommarito2025kl3mdata,
+  title={The KL3M Data Project: Copyright-Clean Training Resources for Large Language Models},
+  author={Bommarito II, Michael J. and Bommarito, Jillian and Katz, Daniel Martin},
+  year={2025},
+  eprint={2504.07854},
+  archivePrefix={arXiv},
+  primaryClass={cs.CL}
+}
+```
 
 ## Primary Sources
 
@@ -71,10 +91,34 @@ TODO: Table
 
 
 ## Installation
-TODO
+
+```bash
+# Clone the repository
+git clone https://github.com/alea-institute/kl3m-data.git
+cd kl3m-data
+
+# Install dependencies using Poetry
+poetry install
+```
 
 ## Usage
-TODO
+
+### Accessing the Dataset
+The KL3M dataset is available through multiple channels:
+
+1. **Hugging Face**:
+   ```python
+   from datasets import load_dataset
+   dataset = load_dataset("alea-institute/kl3m-data-snapshot-20250324")
+   ```
+
+2. **S3 Bucket**:
+   ```bash
+   aws s3 ls s3://data.kl3m.ai/
+   ```
+
+3. **Project Website**:
+   Visit [https://gallery.kl3m.ai/](https://gallery.kl3m.ai/) for more information.
 
 ## License
 
